@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เช็คสต็อก WIP ประจำเดือน</title>
+<style>
+:root{
+  --bg:#F3F5F8; --card:#FFFFFF; --ink:#1B2430; --muted:#46515F; --line:#D5DBE3;
+  --navy:#17406F; --ok-bg:#DCF3E4; --ok-fg:#14532D; --tol-bg:#FFF1C7; --tol-fg:#6B4B00;
+  --bad-bg:#FDE0DC; --bad-fg:#8F1D12; --wait-bg:#E4E8EE; --wait-fg:#3B4655;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Leelawadee UI","Noto Sans Thai","Sarabun",Tahoma,system-ui,sans-serif;font-size:17px;line-height:1.45}
+button,input,select{font-family:inherit;font-size:inherit}
+button{cursor:pointer}
+button:disabled{cursor:default;opacity:.55}
+h1,h2,h3{margin:0}
+.hdr{display:flex;align-items:center;gap:14px;min-height:68px;padding:8px 20px;color:#fff;background:var(--hc,var(--navy));position:sticky;top:0;z-index:5}
+.hdr .title{flex:1;font-size:22px;font-weight:700}
+.hdr .who{font-size:15px;opacity:.95;text-align:right}
+.btn{min-height:48px;padding:0 20px;border:0;border-radius:12px;font-weight:700;background:var(--navy);color:#fff}
+.btn.sec{background:#fff;color:var(--navy);border:3px solid var(--navy)}
+.btn.ghost{background:rgba(255,255,255,.2);color:#fff;font-weight:500}
+.btn.danger{background:#8F1D12;color:#fff}
+.btn.big{min-height:64px;font-size:22px;border-radius:16px}
+.btn.sm{min-height:40px;padding:0 14px;font-size:15px;border-radius:10px}
+.wrap{max-width:1180px;margin:0 auto;padding:20px}
+.grid{display:grid;gap:18px}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:820px){.g3{grid-template-columns:repeat(2,minmax(0,1fr))}.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.g3,.g2,.g4{grid-template-columns:minmax(0,1fr)}}
+.tile{display:flex;flex-direction:column;justify-content:space-between;min-height:170px;padding:22px;border:0;border-radius:20px;text-align:left;color:#fff;background:var(--tc,var(--navy))}
+.tile .tn{font-size:28px;font-weight:700;line-height:1.25}
+.tile .ts{font-size:16px;opacity:.95}
+.tile.off{background:#E3E7ED;color:#4A5565;border:2px dashed #9AA5B4}
+.pbar{height:8px;border-radius:4px;background:rgba(255,255,255,.3);overflow:hidden}
+.pbar>i{display:block;height:8px;background:#fff}
+.card{background:var(--card);border-radius:16px;padding:18px 20px}
+.muted{color:var(--muted)}
+.chip{display:inline-block;padding:2px 10px;border-radius:999px;font-size:14px;font-weight:700;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok-fg)}
+.chip.tol{background:var(--tol-bg);color:var(--tol-fg)}
+.chip.bad{background:var(--bad-bg);color:var(--bad-fg)}
+.chip.wait{background:var(--wait-bg);color:var(--wait-fg)}
+.banner{border-radius:12px;padding:12px 16px;font-weight:700}
+.banner.warn{background:var(--tol-bg);color:var(--tol-fg)}
+.banner.err{background:var(--bad-bg);color:var(--bad-fg)}
+.banner.info{background:#E3EEFB;color:#123E70}
+.banner.good{background:var(--ok-bg);color:var(--ok-fg)}
+input[type=text],input[type=password],input[type=search],select{width:100%;min-height:52px;padding:0 14px;border:2px solid #B7C0CC;border-radius:12px;background:#fff;color:var(--ink)}
+input:focus,select:focus,button:focus-visible{outline:3px solid #2F7BD3;outline-offset:1px}
+.qty{min-height:80px;font-size:44px;font-weight:700;border-width:3px;border-radius:16px}
+label.l{display:block;font-weight:700;margin:10px 0 6px}
+.split{display:flex;gap:18px;align-items:flex-start}
+.split>.left{flex:0 0 440px;min-width:0}
+.split>.right{flex:1;min-width:0}
+@media (max-width:900px){.split{flex-direction:column}.split>.left{flex:1 1 auto;width:100%}}
+.entry{display:flex;align-items:center;gap:10px;width:100%;min-height:76px;text-align:left;padding:10px 14px;border:3px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);margin-bottom:10px}
+.entry.sel{border-color:var(--lc,var(--navy))}
+.entry .c{flex:1;min-width:0}
+.entry .code{font-weight:700;font-size:17px;overflow-wrap:anywhere}
+.entry .nm{font-size:15px;color:var(--muted)}
+.entry .r{text-align:right;white-space:nowrap}
+.entry .r b{font-size:20px;display:block}
+table.t{width:100%;border-collapse:collapse;font-size:16px}
+table.t th{text-align:left;font-size:14px;color:var(--muted);padding:8px 8px;border-bottom:2px solid var(--line);white-space:nowrap}
+table.t td{padding:10px 8px;border-bottom:1px solid #E1E6ED;vertical-align:top}
+table.t td.n,table.t th.n{text-align:right}
+.scroll-x{overflow-x:auto}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1B2430;color:#fff;padding:12px 22px;border-radius:999px;font-weight:700;z-index:30;max-width:90vw}
+.toast.err{background:#8F1D12}
+.stat{border-radius:14px;padding:12px 16px}
+.stat b{display:block;font-size:30px;line-height:1.2}
+.stat span{font-size:15px;font-weight:700}
+.stat.ok{background:var(--ok-bg);color:var(--ok-fg)}.stat.tol{background:var(--tol-bg);color:var(--tol-fg)}
+.stat.bad{background:var(--bad-bg);color:var(--bad-fg)}.stat.wait{background:var(--wait-bg);color:var(--wait-fg)}
+.kpi{background:#fff;border-radius:16px;padding:18px 20px}
+.kpi .k{font-size:15px;font-weight:700;color:var(--muted)}
+.kpi .v{font-size:48px;font-weight:700;line-height:1.2}
+.bar{height:14px;border-radius:7px;background:#E4E8EE;overflow:hidden}.bar>i{display:block;height:14px}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.tab{min-height:44px;padding:0 18px;border-radius:999px;border:2px solid var(--navy);background:#fff;color:var(--navy);font-weight:700}
+.tab.on{background:var(--navy);color:#fff}
+.modal-bg{position:fixed;inset:0;background:rgba(10,20,35,.55);display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto;z-index:20}
+.modal{background:#fff;border-radius:18px;max-width:760px;width:100%;padding:22px 24px}
+.cam{position:fixed;inset:0;background:#000;z-index:25;display:flex;flex-direction:column}
+.cam video{flex:1;min-height:0;width:100%;object-fit:cover}
+.cam .bar2{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px 18px;background:#0b1624;color:#fff}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.spacer{flex:1}
+@media print{
+  .hdr .btn,.noprint,.toast{display:none!important}
+  body{background:#fff}
+  .card{border:1px solid #bbb}
+}
+
+</style>
+</head>
+<body>
+<div id="app">กำลังโหลด...</div>
+<script src="config.js"></script>
+<script>
+window.__WEB__ = true;
+window.__PAGE__ = new URLSearchParams(location.search).get('page') === 'pc' ? 'pc' : 'tablet';
+window.__BASE__ = location.origin + location.pathname;
+if (!window.APP_CONFIG || !window.APP_CONFIG.api || /PUT_YOUR/.test(window.APP_CONFIG.api)) {
+  document.getElementById('app').innerHTML = '<div style="padding:24px;font:18px sans-serif">ยังไม่ได้ตั้งลิงก์ Apps Script ในไฟล์ config.js</div>';
+  window.__NOCONFIG__ = true;
+}
+</script>
+<script>
+/* ตัวอ่านไฟล์ Excel (STOCK PD2 และ BOM) ฟังก์ชันล้วน ไม่แตะ DOM ทดสอบได้ใน Node */
+(function (root) {
+  'use strict';
+  var norm = function (s) { return String(s === null || s === undefined ? '' : s).trim().toLowerCase(); };
+
+  // names = รายชื่อชีต, rowsOf(name) = แถวของชีตเป็น array ของ array (เริ่มคอลัมน์ A)
+  function parseStock(names, rowsOf) {
+    var order = names.slice().sort(function (a, b) { return (norm(b) === 'stock pd2') - (norm(a) === 'stock pd2'); });
+    for (var n = 0; n < order.length; n++) {
+      var rows = rowsOf(order[n]);
+      for (var r = 0; r < Math.min(rows.length, 10); r++) {
+        var hdr = rows[r].map(norm);
+        var iItem = hdr.indexOf('item'), iQty = hdr.indexOf('actual stock');
+        if (iItem < 0 || iQty < 0) continue;
+        var iName = hdr.indexOf('item name');
+        var map = {}, list = [];
+        for (var i = r + 1; i < rows.length; i++) {
+          var a = rows[i];
+          var code = a[iItem] === null || a[iItem] === undefined ? '' : String(a[iItem]).trim();
+          if (!code) continue;
+          var qty = Number(a[iQty]);
+          if (a[iQty] === null || a[iQty] === undefined || a[iQty] === '' || !isFinite(qty)) continue;
+          var k = code.toUpperCase();
+          if (map[k] !== undefined) list[map[k]].qty += qty;
+          else { map[k] = list.length; list.push({ code: code, name: iName >= 0 && a[iName] != null ? String(a[iName]).trim() : '', qty: qty }); }
+        }
+        return { sheet: order[n], items: list };
+      }
+    }
+    throw new Error('ไม่พบหัวคอลัมน์ "Item" และ "Actual Stock" ในไฟล์ (ต้องเป็นไฟล์ STOCK PD2 จาก SimLex)');
+  }
+
+  var LINE_SHEETS = { CNC: 'CNC', FRI: 'FRI', HWD: 'HWD', ASS: 'ASS', RWD: 'RWD' };
+
+  // หาแถวข้อมูลด้วยรูปแบบ: [กลุ่ม] เลขที่(NO.) รหัส Item | ชื่อ | Model | Process
+  function parseBom(names, rowsOf) {
+    var lines = {}, found = [];
+    names.forEach(function (name) {
+      var key = LINE_SHEETS[String(name).trim().toUpperCase()];
+      if (!key) return;
+      found.push(String(name).trim());
+      var seen = {}, list = [];
+      rowsOf(name).forEach(function (a) {
+        for (var i = 0; i < a.length - 4; i++) {
+          if (typeof a[i] === 'number' && typeof a[i + 1] === 'string' && a[i + 1].trim() &&
+              typeof a[i + 2] === 'string' && typeof a[i + 3] === 'string') {
+            var code = a[i + 1].trim(), k = code.toUpperCase();
+            if (!seen[k]) {
+              seen[k] = true;
+              list.push({ code: code, name: String(a[i + 2]).trim(), model: String(a[i + 3]).trim(),
+                process: a[i + 4] == null ? '' : String(a[i + 4]).trim(),
+                grp: i > 0 && a[i - 1] != null ? String(a[i - 1]).trim() : '' });
+            }
+            break;
+          }
+        }
+      });
+      lines[key] = list;
+    });
+    if (!found.length) throw new Error('ไม่พบชีตรายไลน์ (CNC, FRI, HWD, ASS, RWD) ในไฟล์ BOM');
+    return { sheets: found, lines: lines };
+  }
+
+  var api = { parseStock: parseStock, parseBom: parseBom };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Parse = api;
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+/* ส่วนที่ใช้ร่วมกันของหน้าหัวหน้างานและหน้า PC: เรียก Apps Script, รหัสเข้าใช้งาน, อ่านไฟล์ Excel, ดาวน์โหลดไฟล์ */
+const H = (() => {
+  const base = typeof window.__BASE__ === 'string' ? window.__BASE__ : '';
+  let memCode = '', memAdmin = '';
+  const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k) || ''; localStorage.setItem(k, v); } catch (_) {} return ''; };
+  const getCode = () => memCode || store('appCode');
+  const getAdmin = () => memAdmin || (() => { try { return sessionStorage.getItem('adminCode') || ''; } catch (_) { return ''; } })();
+  const setCode = (c) => { memCode = c; store('appCode', c); };
+  const setAdmin = (c) => { memAdmin = c; try { sessionStorage.setItem('adminCode', c); } catch (_) {} };
+
+  function rawCall(path, opt) {
+    return new Promise((resolve, reject) => {
+      const parts = path.split('?');
+      const query = {};
+      if (parts[1]) {
+        parts[1].split('&').forEach((kv) => {
+          if (!kv) return;
+          const i = kv.indexOf('=');
+          const k = decodeURIComponent(i < 0 ? kv : kv.slice(0, i));
+          query[k] = i < 0 ? '' : decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' '));
+        });
+      }
+      let body = null;
+      if (opt.body) { try { body = JSON.parse(opt.body); } catch (_) { body = null; } }
+      if (window.APP_CONFIG && window.APP_CONFIG.api) {
+        const payload = { method: String(opt.method || 'GET').toUpperCase(), path: parts[0], query, body, code: getCode(), adminCode: getAdmin() };
+        // text/plain ทำให้เบราว์เซอร์ไม่ต้องส่ง preflight (Apps Script ไม่รองรับ OPTIONS)
+        fetch(window.APP_CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), redirect: 'follow' })
+          .then((r) => r.json()).then(resolve)
+          .catch(() => reject(new Error('เชื่อมต่อระบบไม่ได้ (เช็คเน็ต หรือลิงก์ Apps Script ใน config.js)')));
+        return;
+      }
+      if (!window.google || !google.script || !google.script.run) { reject(new Error('หน้านี้ต้องเปิดจากลิงก์ของแอป (Web app) ไม่ใช่เปิดไฟล์ตรงๆ')); return; }
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler((e) => reject(new Error(e && e.message ? e.message : String(e))))
+        .apiCall({ method: String(opt.method || 'GET').toUpperCase(), path: parts[0], query, body, code: getCode(), adminCode: getAdmin() });
+    });
+  }
+
+  let askPromise = null;
+  function askCode() {
+    if (askPromise) return askPromise;
+    askPromise = new Promise((resolve) => {
+      const ov = document.createElement('div');
+      ov.className = 'modal-bg';
+      ov.innerHTML = '<form class="modal" style="max-width:460px"><h1 style="font-size:24px">ใส่รหัสเข้าใช้งานของบริษัท</h1>' +
+        '<p class="muted">เป็นรหัสกลาง ใส่ครั้งเดียวต่อแท็บเล็ต ไม่ใช่รหัสส่วนตัว</p>' +
+        '<input id="ac" type="password" autocomplete="off" aria-label="รหัสเข้าใช้งาน">' +
+        '<div id="acm" class="banner err" style="display:none;margin-top:10px"></div>' +
+        '<button class="btn big" style="width:100%;margin-top:14px" type="submit">เข้าใช้งาน</button></form>';
+      document.body.appendChild(ov);
+      const inp = ov.querySelector('#ac');
+      inp.focus();
+      ov.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const code = inp.value;
+        let r;
+        try { r = await rawCall('/api/login', { method: 'POST', body: JSON.stringify({ code }) }); } catch (_) { r = { status: 0, data: { message: 'เชื่อมต่อไม่ได้ ลองอีกครั้ง' } }; }
+        if (r.status === 200) { setCode(code); ov.remove(); askPromise = null; resolve(); }
+        else { const m = ov.querySelector('#acm'); m.textContent = r.data.message || 'รหัสไม่ถูกต้อง'; m.style.display = 'block'; inp.select(); }
+      });
+    });
+    return askPromise;
+  }
+
+  async function api(path, opt = {}) {
+    let res = await rawCall(path, opt);
+    if (res.status === 401 && path !== '/api/login') { await askCode(); res = await rawCall(path, opt); }
+    else if (res.status === 403 && res.data && res.data.error === 'admin') {
+      const c = prompt('ใส่รหัสผู้ดูแล (PC)');
+      if (c) { setAdmin(c); res = await rawCall(path, opt); }
+    }
+    if (res.status >= 400) {
+      const e = new Error((res.data && (res.data.message || res.data.error)) || 'เกิดข้อผิดพลาด');
+      e.data = res.data; e.status = res.status; throw e;
+    }
+    return res.data;
+  }
+
+  // อ่านไฟล์ .xlsx ในเบราว์เซอร์ด้วย SheetJS (โหลดจาก CDN เมื่อใช้งานครั้งแรก)
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('โหลดตัวอ่านไฟล์ Excel ไม่ได้ (เครือข่ายอาจบล็อก cdnjs.cloudflare.com) ลองต่อเน็ตอื่น หรือแจ้งผู้พัฒนา'));
+      document.head.appendChild(s);
+    });
+  }
+  async function readWorkbook(file) {
+    await loadXlsx();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    return {
+      names: wb.SheetNames,
+      rowsOf: (n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null, blankrows: true })
+    };
+  }
+
+  function download(b64, filename) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  }
+
+  return { base, api, readWorkbook, download };
+})();
+
+</script>
+<script>
+/* หน้าจอหัวหน้างาน (แท็บเล็ต) - พอร์ตจาก public/app.js */
+/* หน้าจอหัวหน้างาน (แท็บเล็ต): เลือกไลน์ > ยิง QR/พิมพ์ Item > ใส่ยอด > สรุป/ส่งยอด */
+function startApp() {
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
+  const fmtDiff = (n) => (n === null || n === undefined ? '-' : (n > 0 ? '+' : '') + fmt(n));
+  const ST = {
+    ok: ['ตรง', 'ok'], tol: ['ต่างเล็กน้อย', 'tol'], bad: ['ไม่ตรง', 'bad'],
+    wait: ['รอไลน์อื่น', 'wait'], nosim: ['ไม่มีใน SimLex', 'wait']
+  };
+  const chip = (s) => `<span class="chip ${(ST[s] || ST.wait)[1]}">${(ST[s] || ST.wait)[0]}</span>`;
+  const thTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' }) : '');
+
+  const S = {
+    meta: null, view: 'home', line: null, lineData: null, summary: null,
+    item: null, qty: '', toast: null, kbd: false, busy: false,
+    who: ''
+  };
+  try { S.who = localStorage.getItem('who') || ''; } catch (_) {}
+
+  const api = H.api;
+  let toastTimer;
+  function toast(msg, err) {
+    S.toast = { msg, err };
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { S.toast = null; paintToast(); }, 3200);
+    paintToast();
+  }
+  function paintToast() {
+    let el = $('#toast');
+    if (!S.toast) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.className = 'toast' + (S.toast.err ? ' err' : '');
+    el.textContent = S.toast.msg;
+  }
+
+  // ---------- routing (เก็บในหน่วยความจำ เพราะหน้าเว็บอยู่ใน iframe ของ Apps Script) ----------
+  let R = { view: 'home', line: null };
+  function nav(view, line) { R = { view, line: line || null }; route(); }
+  async function route() {
+    const r = R;
+    S.view = r.view; S.line = r.line; S.item = null; S.qty = '';
+    try {
+      S.meta = await api('/api/meta');
+      if (r.view === 'count') S.lineData = await api('/api/line/' + encodeURIComponent(r.line));
+      if (r.view === 'summary') S.summary = await api('/api/line/' + encodeURIComponent(r.line) + '/summary');
+    } catch (e) {
+      toast(e.message, true);
+      if (!S.meta) {
+        $('#app').innerHTML = '<div class="wrap"><div class="banner err">โหลดข้อมูลไม่สำเร็จ: ' + esc(e.message) + ' <button class="btn sec sm" data-act="retry">ลองใหม่</button></div></div>';
+        return;
+      }
+      if (r.view === 'count' || r.view === 'summary') { R = { view: 'lines', line: null }; S.view = 'lines'; S.line = null; }
+    }
+    render();
+  }
+
+  const lineOf = (id) => (S.meta && S.meta.lines.find((l) => l.id === id)) || { id, name: id, color: '#17406F' };
+
+  // ---------- views ----------
+  function header(title, back, color) {
+    return `<div class="hdr" style="--hc:${color || '#17406F'}">
+      ${back ? `<button class="btn ghost" data-act="back" aria-label="ย้อนกลับ">&#8592; ย้อนกลับ</button>` : ''}
+      <div class="title">${esc(title)}</div>
+      <div class="who">${S.meta ? 'รอบ ' + esc(S.meta.round.label) : ''}${S.who ? '<br>' + esc(S.who) : ''}</div>
+    </div>`;
+  }
+
+  function viewHome() {
+    const m = S.meta;
+    const warn = [];
+    if (m && !m.itemCount) warn.push('PC ยังไม่ได้นำเข้าไฟล์ BOM (รายการ Item ของแต่ละไลน์)');
+    if (m && !m.stockCount) warn.push('PC ยังไม่ได้อัปโหลดไฟล์ STOCK PD2 ของรอบนี้ จึงยังเทียบกับ SimLex ไม่ได้');
+    if (m && m.round.status !== 'open') warn.push('รอบนี้ปิดแล้ว ดูได้อย่างเดียว');
+    return header('ระบบจัดการงานโรงงาน') + `<div class="wrap">
+      <h1 style="font-size:32px;margin:6px 0 4px">เมนูหลัก</h1>
+      <p class="muted" style="margin:0 0 18px">เลือกงานที่ต้องการทำ</p>
+      ${warn.map((w) => `<div class="banner warn" style="margin-bottom:12px">${esc(w)}</div>`).join('')}
+      <div class="grid g3">
+        <button class="tile" style="min-height:220px" data-act="go-lines">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M8.5 13l2.5 2.5L15.5 10"/></svg>
+          <div><div class="tn">เช็คสต็อกประจำเดือน</div><div class="ts">นับ WIP สิ้นเดือนของแต่ละไลน์</div></div>
+        </button>
+        <button class="tile off" style="min-height:220px" disabled><div></div><div><div class="tn" style="font-size:24px">โปรเจกต์ถัดไป</div><div class="ts">เร็วๆ นี้</div></div></button>
+        <button class="tile off" style="min-height:220px" disabled><div></div><div><div class="tn" style="font-size:24px">โปรเจกต์ถัดไป</div><div class="ts">เร็วๆ นี้</div></div></button>
+      </div>
+      <p class="muted" style="margin-top:24px">สำหรับ PC / ผู้บริหาร: <a href="${H.base}?page=pc" target="_top">เปิดหน้าสรุปและตั้งค่า</a></p>
+    </div>`;
+  }
+
+  function viewLines() {
+    const m = S.meta;
+    return header('เช็คสต็อกประจำเดือน', true) + `<div class="wrap">
+      <h1 style="font-size:30px;margin:6px 0 4px">เลือกไลน์ของคุณ</h1>
+      <p class="muted" style="margin:0 0 14px">กดไลน์ของตัวเองเพื่อเริ่มยิง QR และใส่ยอดที่นับ</p>
+      <div style="max-width:420px;margin-bottom:16px">
+        <label class="l" for="who">ชื่อผู้นับ (ไม่บังคับ ใช้เก็บประวัติว่าใครคีย์)</label>
+        <input id="who" type="text" maxlength="40" value="${esc(S.who)}" placeholder="เช่น สมชาย">
+      </div>
+      <div class="grid g3">
+        ${m.lines.map((l) => `<button class="tile" style="--tc:${l.color}" data-act="pick-line" data-line="${l.id}">
+          <div><div class="tn">${esc(l.name)}</div><div class="ts">${esc(l.sub)}</div></div>
+          <div><div class="ts" style="font-weight:700">${l.submitted_at ? 'ส่งยอดแล้ว ' + esc(thTime(l.submitted_at)) : 'นับแล้ว ' + l.counted + ' รายการ'}</div>
+          <div class="pbar" style="margin-top:8px"><i style="width:${l.submitted_at ? 100 : (l.counted ? 45 : 0)}%"></i></div></div>
+        </button>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  function viewCount() {
+    const L = lineOf(S.line), d = S.lineData;
+    const locked = !!d.submitted_at;
+    const entries = d.entries.map((e) => `<button class="entry ${S.item && S.item.code.toUpperCase() === e.code.toUpperCase() ? 'sel' : ''}" style="--lc:${L.color}" data-act="open-entry" data-code="${esc(e.code)}">
+        <div class="c"><div class="code">${esc(e.code)}</div><div class="nm">${esc(e.name)}</div></div>
+        <div class="r"><b>${fmt(e.qty)}</b>${chip(e.status)}</div>
+      </button>`).join('');
+    return header('นับสต็อก - ' + L.name, true, L.color) + `<div class="wrap">
+      ${locked ? `<div class="banner info" style="margin-bottom:14px">ไลน์นี้ส่งยอดแล้วเมื่อ ${esc(thTime(d.submitted_at))} &nbsp; <button class="btn sec sm" data-act="reopen">แก้ไขต่อ</button></div>` : ''}
+      ${d.round.status !== 'open' ? '<div class="banner warn" style="margin-bottom:14px">รอบนี้ปิดแล้ว ดูได้อย่างเดียว</div>' : ''}
+      <div class="split">
+        <div class="left">
+          <div class="row" style="flex-wrap:nowrap;margin-bottom:10px">
+            <input id="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="รหัส Item (เครื่องยิงจะพิมพ์ให้เอง)" placeholder="ยิง QR ด้วยเครื่องยิง หรือพิมพ์รหัส Item" inputmode="${S.kbd ? 'text' : 'none'}" style="min-height:56px" ${locked ? 'disabled' : ''}>
+          </div>
+          <div class="row" style="margin-bottom:10px">
+            ${window.__WEB__ ? `<button class="btn" style="background:${L.color}" data-act="camera" ${locked ? 'disabled' : ''}>ยิง QR ด้วยกล้อง</button>` : ''}
+            <button class="btn sec sm" data-act="kbd">${S.kbd ? 'ซ่อนคีย์บอร์ดบนจอ' : 'พิมพ์เอง (เปิดคีย์บอร์ดบนจอ)'}</button>
+            <span class="muted">นับแล้ว ${d.entries.length} รายการ</span>
+          </div>
+          <div id="entries">${entries || '<div class="card muted">ยังไม่มีรายการ ยิง QR หรือพิมพ์รหัส Item เพื่อเริ่มนับ</div>'}</div>
+          <button class="btn sec big" style="width:100%;margin-top:6px;min-height:56px;font-size:19px" data-act="summary">ดูสรุปและส่งยอด</button>
+        </div>
+        <div class="right">${panelItem(L, locked)}</div>
+      </div>
+    </div>`;
+  }
+
+  function panelItem(L, locked) {
+    const it = S.item;
+    if (!it) {
+      return `<div class="card" style="border:3px dashed #9AA5B4;background:transparent;text-align:center;padding:40px 20px">
+        <div style="font-size:26px;font-weight:700">ยิง QR หรือเลือกรายการ</div>
+        <div class="muted">รายละเอียดของ Item จะขึ้นที่นี่ แล้วใส่จำนวนที่นับมา</div></div>`;
+    }
+    const others = it.others.length
+      ? it.others.map((o) => `<div>${esc(o.name)}: ${o.qty !== null ? 'นับแล้ว <b>' + fmt(o.qty) + '</b> ชิ้น' : (o.submitted ? 'ส่งยอดแล้ว ไม่มีของ' : 'ยังไม่ได้นับ')}</div>`).join('')
+      : '<div>ไม่มี (อยู่ไลน์นี้ไลน์เดียว)</div>';
+    return `<div class="card" style="padding:22px 26px">
+      <div style="font-size:30px;font-weight:700;overflow-wrap:anywhere">${esc(it.code)}</div>
+      <div style="font-size:20px">${esc(it.name || '(ไม่มีชื่อ)')}</div>
+      <div class="muted">${it.model ? 'Model ' + esc(it.model) : ''}${it.process ? ' · Process ' + esc(it.process) : ''}</div>
+      ${!it.known ? '<div class="banner warn" style="margin:12px 0">ไม่พบรหัสนี้ใน BOM และ STOCK PD2 ตรวจรหัสให้ถูกต้องก่อนบันทึก (ถ้ายืนยันว่าถูก บันทึกได้ PC จะเห็นเป็นรายการพิเศษ)</div>' : ''}
+      ${it.known && it.belongsToLine === false ? '<div class="banner info" style="margin:12px 0">Item นี้ไม่อยู่ในรายการของไลน์นี้ใน BOM (ถ้านับได้จริงบันทึกได้ตามปกติ)</div>' : ''}
+      <div class="row" style="margin:12px 0">
+        <div class="stat wait" style="flex:1"><span>ยอด SimLex (STOCK PD2)</span><b>${it.simlex === null ? 'ไม่มีใน STOCK PD2' : fmt(it.simlex)}</b></div>
+        <div class="stat wait" style="flex:1"><span>ไลน์นี้นับไว้แล้ว</span><b>${it.mine === null ? '-' : fmt(it.mine)}</b></div>
+      </div>
+      <div class="card" style="background:#EEF2F7;padding:12px 16px"><div style="font-weight:700;margin-bottom:4px">ไลน์อื่นที่มี Item นี้</div>${others}</div>
+      <label class="l" for="qty">จำนวนที่นับได้ (PCS.)</label>
+      <input id="qty" class="qty" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${esc(S.qty)}" ${locked ? 'disabled' : ''}>
+      <div class="row" style="margin-top:12px;flex-wrap:nowrap">
+        <button class="btn big" style="flex:1;background:${L.color}" data-act="save" ${locked || S.busy ? 'disabled' : ''}>บันทึกยอด</button>
+        ${it.mine !== null ? `<button class="btn sec big" style="flex:0 0 auto" data-act="add" ${locked || S.busy ? 'disabled' : ''}>บวกเพิ่ม</button>` : ''}
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:15px">"บันทึกยอด" = ใช้ตัวเลขนี้แทนยอดเดิม &nbsp;·&nbsp; "บวกเพิ่ม" = เอาไปบวกกับที่นับไว้แล้ว (เช่น เจอของอีกกอง)</p>
+    </div>`;
+  }
+
+  function viewSummary() {
+    const s = S.summary, L = lineOf(s.line);
+    const c = s.counts;
+    return header('สรุปยอด - ' + L.name, true, L.color) + `<div class="wrap">
+      <div class="grid g4" style="margin-bottom:14px">
+        <div class="stat ok"><b>${c.ok}</b><span>ตรง</span></div>
+        <div class="stat tol"><b>${c.tol}</b><span>ต่างเล็กน้อย (นับว่าตรงใน %)</span></div>
+        <div class="stat bad"><b>${c.bad}</b><span>ไม่ตรง ต้องตามหา</span></div>
+        <div class="stat wait"><b>${c.wait + c.nosim}</b><span>รอไลน์อื่น / ไม่มีใน SimLex</span></div>
+      </div>
+      <div class="card scroll-x"><table class="t">
+        <thead><tr><th>Item</th><th class="n">ไลน์นี้นับ</th><th>ไลน์อื่น</th><th class="n">รวมนับ</th><th class="n">SimLex</th><th class="n">ผลต่าง</th><th>สถานะ</th></tr></thead>
+        <tbody>${s.entries.map((e) => `<tr>
+          <td><b>${esc(e.code)}</b><br><span class="muted" style="font-size:14px">${esc(e.name)}</span></td>
+          <td class="n">${fmt(e.qty)}</td>
+          <td style="font-size:14px">${e.others.length ? e.others.map((o) => esc(o.name) + ' ' + (o.qty !== null ? fmt(o.qty) : (o.submitted ? '0' : 'ยังไม่นับ'))).join('<br>') : '-'}</td>
+          <td class="n">${fmt(e.total)}</td><td class="n">${fmt(e.simlex)}</td>
+          <td class="n"><b>${e.status === 'wait' ? '-' : fmtDiff(e.diff)}</b></td><td>${chip(e.status)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">ยังไม่มีรายการ</td></tr>'}</tbody>
+      </table></div>
+      <p class="muted" style="font-size:15px">ผลต่าง ±${s.tolerance} ชิ้นนับว่าตรงเฉพาะตอนสรุป % ส่วนยอดที่ PC ปรับใน SimLex ใช้ผลต่างจริงเสมอ สถานะ "รอไลน์อื่น" จะเทียบได้เมื่อทุกไลน์ที่มี Item นั้นส่งยอดครบ</p>
+      <div class="row noprint" style="margin-top:16px">
+        ${s.submitted_at
+          ? `<div class="banner good" style="flex:1">ส่งยอดแล้ว ${esc(thTime(s.submitted_at))} (PC และหัวหน้าเห็นในหน้าสรุปได้ทันที)</div><button class="btn sec big" data-act="reopen">แก้ไขต่อ</button>`
+          : `<button class="btn big" style="flex:1;background:${L.color}" data-act="submit">ส่งยอดไลน์นี้ (กดเมื่อนับครบแล้ว)</button>`}
+        <button class="btn sec big" data-act="print">พิมพ์สรุป</button>
+      </div>
+    </div>`;
+  }
+
+  function render() {
+    const app = $('#app');
+    if (!S.meta) { app.innerHTML = '<div class="wrap">กำลังโหลด...</div>'; return; }
+    app.innerHTML = { home: viewHome, lines: viewLines, count: viewCount, summary: viewSummary }[S.view]();
+    if (S.view === 'count') {
+      const code = $('#code');
+      if (code && !S.item && !code.disabled) code.focus({ preventScroll: true });
+      else if (S.item && $('#qty') && !$('#qty').disabled) { const q = $('#qty'); q.focus({ preventScroll: true }); q.select(); }
+    }
+  }
+
+  // ---------- actions ----------
+  async function lookup(raw, fromEntry) {
+    const code = String(raw || '').trim();
+    if (!code) return;
+    try {
+      const it = await api('/api/lookup?code=' + encodeURIComponent(code) + '&line=' + encodeURIComponent(S.line));
+      S.item = it;
+      S.qty = it.mine !== null ? String(it.mine) : '';
+      render();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function save(mode) {
+    if (!S.item || S.busy) return;
+    const q = $('#qty') ? $('#qty').value.replace(/,/g, '').trim() : S.qty;
+    if (q === '' || !/^\d+(\.\d{1,3})?$/.test(q)) { toast('ใส่จำนวนเป็นตัวเลขก่อน', true); const el = $('#qty'); if (el) el.focus(); return; }
+    S.busy = true;
+    try {
+      const code = S.item.code;
+      const r = await api('/api/count', { method: 'POST', body: JSON.stringify({ line: S.line, code, qty: Number(q), mode, name: S.who }) });
+      const list = S.lineData.entries.filter((e) => e.code.toUpperCase() !== r.entry.code.toUpperCase());
+      list.unshift(r.entry);
+      S.lineData.entries = list;
+      S.item = null; S.qty = '';
+      S.busy = false;
+      const st = r.entry.status;
+      toast('บันทึกแล้ว ' + code + ' = ' + fmt(r.saved) + (st === 'wait' ? ' (รอไลน์อื่น)' : (st === 'bad' ? ' (ยังไม่ตรง SimLex)' : '')), false);
+      render();
+    } catch (e) {
+      S.busy = false;
+      toast(e.message, true);
+      if (e.data && e.data.error === 'submitted') route();
+    }
+  }
+
+  async function camera() {
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices) {
+      toast('เบราว์เซอร์นี้ยังสแกนด้วยกล้องไม่ได้ ใช้เครื่องยิงหรือพิมพ์รหัสแทน', true);
+      return;
+    }
+    let stream, stop = false;
+    const ov = document.createElement('div');
+    ov.className = 'cam';
+    ov.innerHTML = '<video playsinline muted></video><div class="bar2"><span>เล็งกล้องไปที่ QR ของ Item</span><button class="btn" style="background:#fff;color:#17406F">ปิดกล้อง</button></div>';
+    document.body.appendChild(ov);
+    const close = () => { stop = true; if (stream) stream.getTracks().forEach((t) => t.stop()); ov.remove(); };
+    ov.querySelector('button').onclick = close;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      const video = ov.querySelector('video');
+      video.srcObject = stream; await video.play();
+      const det = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'data_matrix'] });
+      const tick = async () => {
+        if (stop) return;
+        try {
+          const found = await det.detect(video);
+          if (found.length && found[0].rawValue) { const v = found[0].rawValue; close(); lookup(v); return; }
+        } catch (_) {}
+        setTimeout(tick, 250);
+      };
+      tick();
+    } catch (e) {
+      close();
+      toast('เปิดกล้องไม่ได้ (ต้องอนุญาตกล้อง และเปิดผ่าน https)', true);
+    }
+  }
+
+  document.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-act]');
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === 'back') {
+      if (S.view === 'summary') nav('count', S.line);
+      else if (S.view === 'count') nav('lines');
+      else nav('home');
+    } else if (act === 'go-lines') nav('lines');
+    else if (act === 'pick-line') {
+      const w = $('#who'); if (w) { S.who = w.value.trim().slice(0, 40); try { localStorage.setItem('who', S.who); } catch (_) {} }
+      nav('count', b.dataset.line);
+    } else if (act === 'open-entry') lookup(b.dataset.code, true);
+    else if (act === 'save') save('set');
+    else if (act === 'add') save('add');
+    else if (act === 'retry') route();
+    else if (act === 'camera') camera();
+    else if (act === 'kbd') { S.kbd = !S.kbd; render(); const c = $('#code'); if (c) c.focus(); }
+    else if (act === 'summary') nav('summary', S.line);
+    else if (act === 'print') window.print();
+    else if (act === 'submit') {
+      if (!confirm('ส่งยอดไลน์นี้ใช่ไหม หลังส่งแล้วจะแก้ยอดไม่ได้จนกว่าจะกด "แก้ไขต่อ"')) return;
+      try {
+        await api('/api/line/' + S.line + '/submit', { method: 'POST', body: JSON.stringify({ name: S.who }) });
+        toast('ส่งยอดแล้ว', false);
+        route();
+      } catch (e) {
+        if (e.data && e.data.error === 'empty' && confirm('ไลน์นี้ยังไม่มีรายการนับเลย ยืนยันส่งว่า "ไม่มีของ" ใช่ไหม')) {
+          try { await api('/api/line/' + S.line + '/submit', { method: 'POST', body: JSON.stringify({ name: S.who, confirmEmpty: true }) }); toast('ส่งยอดแล้ว', false); route(); } catch (e2) { toast(e2.message, true); }
+        } else if (!(e.data && e.data.error === 'empty')) toast(e.message, true);
+      }
+    } else if (act === 'reopen') {
+      try { await api('/api/line/' + S.line + '/reopen', { method: 'POST', body: JSON.stringify({ name: S.who }) }); toast('เปิดให้แก้ไขต่อแล้ว', false); route(); } catch (e) { toast(e.message, true); }
+    }
+  });
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter') return;
+    if (ev.target.id === 'code') { ev.preventDefault(); const v = ev.target.value; ev.target.value = ''; lookup(v); }
+    else if (ev.target.id === 'qty') { ev.preventDefault(); save('set'); }
+  });
+  document.addEventListener('input', (ev) => {
+    if (ev.target.id === 'qty') {
+      const v = ev.target.value.replace(/[^0-9.]/g, '');
+      if (v !== ev.target.value) ev.target.value = v;
+      S.qty = v;
+    }
+  });
+
+  route();
+}
+
+/* หน้า PC / ผู้บริหาร - พอร์ตจาก public/pc.js */
+/* หน้า PC / ผู้บริหาร: แดชบอร์ดสรุป, รายการ Item, ประวัติการคีย์, นำเข้าไฟล์และตั้งค่า */
+function startPc() {
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
+  const fmtDiff = (n) => (n === null || n === undefined ? '-' : (n > 0 ? '+' : '') + fmt(n));
+  const thTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' }) : '-');
+  const ST = { ok: ['ตรง', 'ok'], tol: ['ต่างเล็กน้อย', 'tol'], bad: ['ไม่ตรง', 'bad'], wait: ['รอไลน์อื่น', 'wait'], nosim: ['ไม่มีใน SimLex', 'wait'] };
+  const chip = (s) => `<span class="chip ${(ST[s] || ST.wait)[1]}">${(ST[s] || ST.wait)[0]}</span>`;
+  const ACTION = { set: 'ตั้งยอด', add: 'บวกเพิ่ม', delete: 'ลบรายการ', submit: 'ส่งยอดไลน์', reopen: 'เปิดให้แก้ต่อ' };
+
+  const S = { exportInfo: null, tab: 'overview', meta: null, roundId: '', dash: null, items: null, q: '', status: '', log: null, modal: null, msg: null };
+
+  const api = H.api;
+  const rq = () => (S.roundId ? '?round=' + S.roundId : '');
+  const rqa = () => (S.roundId ? '&round=' + S.roundId : '');
+  let msgTimer;
+  function say(text, kind) { S.msg = { text, kind: kind || 'good' }; clearTimeout(msgTimer); msgTimer = setTimeout(() => { S.msg = null; render(); }, 6000); render(); }
+
+  async function load() {
+    try {
+      S.meta = await api('/api/meta');
+      if (S.tab === 'overview') S.dash = await api('/api/dashboard' + rq());
+      if (S.tab === 'items') S.items = await api('/api/items?q=' + encodeURIComponent(S.q) + '&status=' + S.status + rqa());
+      if (S.tab === 'log') S.log = await api('/api/log' + rq());
+    } catch (e) { if (e.message !== 'auth') say(e.message, 'err'); }
+    render();
+  }
+
+  function head() {
+    const m = S.meta;
+    return `<div class="hdr"><div class="title">เช็คสต็อก WIP - PC / ผู้บริหาร</div>
+      ${m ? `<label class="noprint" style="display:flex;gap:8px;align-items:center;font-size:15px">รอบ
+        <select id="round" style="min-height:40px;width:auto">${m.rounds.map((r) => `<option value="${r.id}" ${(S.roundId ? Number(S.roundId) === r.id : r.id === m.round.id) ? 'selected' : ''}>${esc(r.label)}${r.status === 'closed' ? ' (ปิดแล้ว)' : ''}</option>`).join('')}</select></label>` : ''}
+      <a class="btn ghost" style="display:inline-flex;align-items:center;text-decoration:none" href="${H.base}" target="_top">หน้าหัวหน้างาน</a></div>`;
+  }
+  function tabs() {
+    const t = [['overview', 'ภาพรวม'], ['items', 'รายการ Item'], ['log', 'ประวัติการคีย์'], ['setup', 'นำเข้าไฟล์ / ตั้งค่า']];
+    return `<div class="tabs noprint">${t.map(([k, n]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>`;
+  }
+
+  function viewOverview() {
+    const d = S.dash, m = S.meta;
+    if (!d) return '<p>กำลังโหลด...</p>';
+    const s = d.stats;
+    const warn = [];
+    if (!m.itemCount) warn.push('ยังไม่ได้นำเข้า BOM (ไปที่แท็บ "นำเข้าไฟล์ / ตั้งค่า")');
+    if (!m.stockCount) warn.push('ยังไม่ได้อัปโหลด STOCK PD2 ของรอบนี้ จึงเทียบกับ SimLex ไม่ได้');
+    const rq0 = rq();
+    return `${warn.map((w) => `<div class="banner warn" style="margin-bottom:12px">${esc(w)}</div>`).join('')}
+      <div class="grid g4" style="margin-bottom:18px">
+        <div class="kpi"><div class="k">ตรง (เผื่อ ±${d.tolerance}) สำหรับสรุปผู้บริหาร</div><div class="v" style="color:#14532D">${s.pctTol === null ? '-' : s.pctTol + '%'}</div><div class="muted">${s.ok + s.tol} จาก ${s.finalCount} รายการที่ไลน์ส่งครบแล้ว</div></div>
+        <div class="kpi"><div class="k">ตรงเป๊ะเทียบ SimLex</div><div class="v">${s.pctExact === null ? '-' : s.pctExact + '%'}</div><div class="muted">${s.ok} จาก ${s.finalCount} รายการ</div></div>
+        <div class="kpi"><div class="k">ต้องตามหาและปรับยอด</div><div class="v" style="color:#8F1D12">${s.bad}</div><div class="muted">ผลต่างเกิน ±${d.tolerance} · รอไลน์อื่น ${s.wait}</div></div>
+        <div class="kpi"><div class="k">ไลน์ที่ส่งยอดแล้ว</div><div class="v" style="color:#17406F">${s.linesSubmitted}/5</div><div class="muted">${d.negativeStock ? 'ยอด SimLex ติดลบ ' + d.negativeStock + ' รายการ' : ''}</div></div>
+      </div>
+      <div class="grid g2" style="margin-bottom:18px;align-items:start">
+        <div class="card"><h2 style="font-size:20px;margin-bottom:12px">% ตรงแยกตามไลน์ (เผื่อ ±${d.tolerance})</h2>
+          ${d.byLine.map((l) => `<div style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><b>${esc(l.name)}</b><span>${l.pct === null ? 'ยังไม่มีข้อมูลเทียบ' : l.pct + '%'} · ${l.submitted_at ? 'ส่งยอดแล้ว ' + thTime(l.submitted_at) : 'ยังไม่ส่ง'} · นับ ${l.counted} รายการ</span></div>
+            <div class="bar"><i style="width:${l.pct || 0}%;background:${l.color}"></i></div></div>`).join('')}
+        </div>
+        <div class="card"><h2 style="font-size:20px;margin-bottom:8px">ส่งออกไฟล์</h2>
+          <p class="muted" style="margin-top:0">ไฟล์สำหรับฝ่ายขาย (MK) คือยอดนับจริงรวมแยกตามไลน์ (ชีต "WIP" ชื่อคงที่ทุกเดือน คอลัมน์ A = Item, B = รวมนับได้ ใช้กับ XLOOKUP ได้ตรงๆ) ส่วนไฟล์ปรับยอดสำหรับ PC นำไปลง SimLex ใช้ผลต่างจริงไม่เผื่อ</p>
+          <div class="row"><button class="btn" data-act="export-mk">ดาวน์โหลดไฟล์ให้ MK</button>
+          <button class="btn sec" data-act="export-adjust">ดาวน์โหลดรายการปรับยอด SimLex</button></div>
+          ${S.exportInfo ? `<div class="banner good" style="margin-top:12px;font-weight:500">สร้างไฟล์ ${esc(S.exportInfo.filename)} แล้ว${S.exportInfo.base64 ? ' (ถ้าไม่เริ่มดาวน์โหลดเอง ให้กดลิงก์ด้านล่าง)' : ''}<br><a href="${esc(S.exportInfo.xlsxUrl)}" target="_blank" rel="noopener">ดาวน์โหลด .xlsx</a> &nbsp;·&nbsp; <a href="${esc(S.exportInfo.sheetUrl)}" target="_blank" rel="noopener">เปิดเป็น Google Sheets</a></div>` : ''}
+          <p class="muted" style="font-size:15px;margin-bottom:0">ควรดาวน์โหลดหลังทุกไลน์ส่งยอดครบ (ตอนนี้ส่งแล้ว ${s.linesSubmitted}/5 ไลน์)</p>
+        </div>
+      </div>
+      <div class="card"><h2 style="font-size:20px;margin-bottom:4px">รายการที่ไม่ตรง (เรียงตามผลต่างมากสุด)</h2>
+        <p class="muted" style="margin-top:0">แสดงเฉพาะ Item ที่ทุกไลน์ที่น่าจะมีของส่งยอดครบแล้ว กดดู "ตามรอย" เพื่อดูว่าควรไปตามต่อที่ไลน์ไหน</p>
+        <div class="scroll-x"><table class="t"><thead><tr><th>Item</th><th class="n">SimLex</th><th class="n">นับรวม</th><th class="n">ผลต่าง</th><th>ไลน์ที่เกี่ยวข้อง</th><th></th></tr></thead>
+        <tbody>${d.attention.map((r) => `<tr><td><b>${esc(r.code)}</b><br><span class="muted" style="font-size:14px">${esc(r.name)}</span></td>
+          <td class="n">${fmt(r.simlex)}</td><td class="n">${fmt(r.total)}</td><td class="n"><b style="color:#8F1D12">${fmtDiff(r.diff)}</b></td>
+          <td style="font-size:14px">${r.candNames.map(esc).join(', ')}</td><td><button class="btn sec sm" data-trace="${esc(r.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">ยังไม่มีรายการที่ไม่ตรง (หรือยังมีไลน์ที่ไม่ได้ส่งยอด)</td></tr>'}</tbody></table></div>
+      </div>`;
+  }
+
+  function viewItems() {
+    const d = S.items;
+    return `<div class="card" style="margin-bottom:14px"><div class="row">
+        <input id="q" type="search" placeholder="ค้นหารหัสหรือชื่อ Item" value="${esc(S.q)}" style="max-width:340px">
+        <select id="st" style="max-width:240px"><option value="">ทุกสถานะ</option>${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${S.status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>
+        <button class="btn" data-act="search">ค้นหา</button>
+        <span class="muted">${d ? 'พบ ' + d.total + ' รายการ (แสดงสูงสุด 300)' : ''}</span></div></div>
+      <div class="card scroll-x"><table class="t"><thead><tr><th>Item</th><th class="n">SimLex</th><th class="n">นับรวม</th><th class="n">ผลต่าง</th><th>แยกตามไลน์</th><th>สถานะ</th><th></th></tr></thead>
+      <tbody>${d ? d.rows.map((r) => `<tr><td><b>${esc(r.code)}</b><br><span class="muted" style="font-size:14px">${esc(r.name)}</span></td>
+        <td class="n">${fmt(r.simlex)}</td><td class="n">${fmt(r.total)}</td><td class="n">${r.status === 'wait' ? '-' : fmtDiff(r.diff)}</td>
+        <td style="font-size:14px">${Object.entries(r.perLine).map(([l, q]) => esc(l) + ' ' + fmt(q)).join(', ') || '-'}</td>
+        <td>${chip(r.status)}</td><td><button class="btn sec sm" data-trace="${esc(r.code)}">ตามรอย</button></td></tr>`).join('') : '<tr><td colspan="7">กำลังโหลด...</td></tr>'}</tbody></table></div>`;
+  }
+
+  function viewLog() {
+    const d = S.log;
+    return `<div class="card scroll-x"><h2 style="font-size:20px;margin-bottom:8px">ประวัติการคีย์ล่าสุด 200 รายการ (ใครแก้อะไรเมื่อไหร่)</h2>
+      <table class="t"><thead><tr><th>เวลา</th><th>ไลน์</th><th>Item</th><th>การกระทำ</th><th class="n">เดิม</th><th class="n">ใหม่</th><th>ผู้นับ</th></tr></thead>
+      <tbody>${d ? d.rows.map((r) => `<tr><td>${thTime(r.at)}</td><td>${esc(r.lineName)}</td><td>${r.code === '-' ? '' : esc(r.code)}</td><td>${esc(ACTION[r.action] || r.action)}</td><td class="n">${fmt(r.old_qty)}</td><td class="n">${fmt(r.new_qty)}</td><td>${esc(r.counted_by || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">ยังไม่มีประวัติ</td></tr>' : '<tr><td colspan="7">กำลังโหลด...</td></tr>'}</tbody></table></div>`;
+  }
+
+  function viewSetup() {
+    const m = S.meta;
+    if (!m) return '<p>กำลังโหลด...</p>';
+    return `<div class="grid g2" style="align-items:start">
+      <div class="card"><h2 style="font-size:20px">1) นำเข้า BOM (รายการ Item ของแต่ละไลน์)</h2>
+        <p class="muted">ไฟล์ BOM-SIMLEX ที่มีชีต CNC, FRI, HWD, ASS, RWD ทำครั้งแรก และเมื่อ BOM เปลี่ยน (นำเข้าใหม่จะแทนที่ของเดิมทั้งหมด ยอดนับที่คีย์ไว้แล้วไม่หาย)</p>
+        <p>ตอนนี้มี <b>${fmt(m.itemCount)}</b> Item ในระบบ</p>
+        <input id="bomfile" type="file" accept=".xlsx" aria-label="เลือกไฟล์ BOM"><div style="height:10px"></div>
+        <button class="btn" data-act="up-bom">นำเข้า BOM</button></div>
+      <div class="card"><h2 style="font-size:20px">2) อัปโหลด STOCK PD2 จาก SimLex</h2>
+        <p class="muted">ไฟล์ที่ export จาก SimLex (มีคอลัมน์ Item และ Actual Stock) อัปโหลดใหม่ได้ทุกเมื่อ จะแทนที่ยอด SimLex ของรอบนี้</p>
+        <p>รอบ <b>${esc(m.round.label)}</b>: ${m.stockCount ? 'มี ' + fmt(m.stockCount) + ' รายการ · ' + esc(m.round.stock_file || '') + ' · ' + thTime(m.round.stock_uploaded_at) : 'ยังไม่ได้อัปโหลด'}</p>
+        <input id="stockfile" type="file" accept=".xlsx" aria-label="เลือกไฟล์ STOCK PD2"><div style="height:10px"></div>
+        <button class="btn" data-act="up-stock" ${m.round.status !== 'open' ? 'disabled' : ''}>อัปโหลด STOCK PD2</button></div>
+      <div class="card"><h2 style="font-size:20px">3) ค่าเผื่อสำหรับสรุป %</h2>
+        <p class="muted">ผลต่างไม่เกินค่านี้นับว่า "ตรง" ตอนสรุป % ให้ผู้บริหารเท่านั้น ยอดปรับ SimLex ใช้ผลต่างจริงเสมอ</p>
+        <div class="row"><input id="tol" type="text" inputmode="numeric" value="${m.tolerance}" style="max-width:120px"> <span>ชิ้น (±)</span> <button class="btn" data-act="save-tol">บันทึก</button></div></div>
+      <div class="card"><h2 style="font-size:20px">4) เปิดรอบนับใหม่</h2>
+        <p class="muted">ปิดรอบ <b>${esc(m.round.label)}</b> (ดูย้อนหลังได้ แก้ไม่ได้) แล้วเริ่มรอบใหม่ที่ยังไม่มียอดนับ หลังเปิดรอบใหม่ต้องอัปโหลด STOCK PD2 ใหม่</p>
+        <div class="row"><input id="rlabel" type="text" placeholder="ชื่อรอบ เช่น 2026-11" style="max-width:220px"> <button class="btn danger" data-act="new-round">ปิดรอบนี้และเปิดรอบใหม่</button></div></div>
+    </div>`;
+  }
+
+  function modal() {
+    const t = S.modal;
+    if (!t) return '';
+    if (t === 'loading') return '<div class="modal-bg"><div class="modal">กำลังโหลด...</div></div>';
+    const r = t.row;
+    return `<div class="modal-bg" data-act="close-modal"><div class="modal" role="dialog" aria-modal="true">
+      <div class="row"><div class="spacer"><div style="font-size:24px;font-weight:700;overflow-wrap:anywhere">${esc(r.code)}</div><div>${esc(r.name)} <span class="muted">${esc(r.model)} ${esc(r.process)}</span></div></div><button class="btn sec sm" data-act="close-modal">ปิด</button></div>
+      <div class="grid g3" style="margin:14px 0"><div class="stat wait"><span>SimLex</span><b>${r.simlex === null ? '-' : fmt(r.simlex)}</b></div>
+        <div class="stat wait"><span>นับรวม</span><b>${fmt(r.total)}</b></div>
+        <div class="stat ${r.status === 'bad' ? 'bad' : (r.status === 'ok' ? 'ok' : (r.status === 'tol' ? 'tol' : 'wait'))}"><span>ผลต่างจริง</span><b>${r.status === 'wait' ? '-' : fmtDiff(r.diff)}</b></div></div>
+      <h3 style="margin:8px 0">ไปตามต่อที่ไหน</h3>
+      ${t.hints.length ? t.hints.map((h) => `<div class="banner info" style="margin-bottom:8px;font-weight:500">${esc(h)}</div>`).join('') : '<div class="muted">ไม่มีข้อสังเกต</div>'}
+      <h3 style="margin:14px 0 6px">ไลน์ที่น่าจะมี Item นี้</h3>
+      <table class="t"><thead><tr><th>ไลน์</th><th class="n">นับได้</th><th>ส่งยอด</th></tr></thead><tbody>
+      ${t.lines.map((l) => `<tr><td>${esc(l.name)}</td><td class="n">${l.qty === null ? 'ไม่ได้นับ' : fmt(l.qty)}</td><td>${l.submitted_at ? thTime(l.submitted_at) : '<b>ยังไม่ส่ง</b>'}</td></tr>`).join('')}</tbody></table>
+      ${t.prev ? `<h3 style="margin:14px 0 6px">รอบก่อน (${esc(t.prev.label)})</h3><div>${t.prev.counts.length ? t.prev.counts.map((c) => esc(c.lineName) + ' ' + fmt(c.qty)).join(' · ') : 'ไม่มีข้อมูลนับของ Item นี้'}</div>` : ''}
+      <h3 style="margin:14px 0 6px">ประวัติการคีย์ Item นี้</h3>
+      <table class="t"><thead><tr><th>เวลา</th><th>ไลน์</th><th>การกระทำ</th><th class="n">เดิม</th><th class="n">ใหม่</th><th>ผู้นับ</th></tr></thead><tbody>
+      ${t.history.map((h) => `<tr><td>${thTime(h.at)}</td><td>${esc(h.lineName)}</td><td>${esc(ACTION[h.action] || h.action)}</td><td class="n">${fmt(h.old_qty)}</td><td class="n">${fmt(h.new_qty)}</td><td>${esc(h.counted_by || '')}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">ไม่มีประวัติ</td></tr>'}</tbody></table>
+    </div></div>`;
+  }
+
+  function render() {
+    const keep = { q: $('#q') && $('#q') === document.activeElement };
+    const body = { overview: viewOverview, items: viewItems, log: viewLog, setup: viewSetup }[S.tab]();
+    $('#app').innerHTML = head() + `<div class="wrap">${tabs()}${S.msg ? `<div class="banner ${S.msg.kind === 'err' ? 'err' : 'good'}" style="margin-bottom:14px">${esc(S.msg.text)}</div>` : ''}${body}</div>${modal()}`;
+    if (keep.q) { const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  }
+
+  async function upload(kind) {
+    const input = $(kind === 'bom' ? '#bomfile' : '#stockfile');
+    const file = input && input.files[0];
+    if (!file) { say('ยังไม่ได้เลือกไฟล์', 'err'); return; }
+    if (!/\.xlsx$/i.test(file.name)) { say('ใช้ได้เฉพาะไฟล์ .xlsx', 'err'); return; }
+    say('กำลังอ่านไฟล์และอัปโหลด... (ไฟล์ใหญ่อาจใช้เวลาสักครู่)');
+    try {
+      const wb = await H.readWorkbook(file);
+      let r;
+      if (kind === 'bom') {
+        const parsed = Parse.parseBom(wb.names, wb.rowsOf);
+        r = await api('/api/admin/bom', { method: 'POST', body: JSON.stringify({ lines: parsed.lines }) });
+        say('นำเข้า BOM แล้ว ' + r.items + ' Item (' + Object.entries(r.perLine).map(([l, n]) => l + ' ' + n).join(', ') + ')');
+      } else {
+        const parsed = Parse.parseStock(wb.names, wb.rowsOf);
+        r = await api('/api/admin/stock', { method: 'POST', body: JSON.stringify({ items: parsed.items, file: file.name }) });
+        say('อัปโหลด STOCK PD2 แล้ว ' + r.items + ' รายการ (มียอด ' + r.nonZero + ' รายการ, ติดลบ ' + r.negative + ' รายการ)');
+      }
+      await load();
+    } catch (e) { say(e.message, 'err'); }
+  }
+
+  async function exportFile(kind) {
+    say('กำลังสร้างไฟล์... (ครั้งแรกอาจใช้เวลา 5-15 วินาที และมีหน้าต่างขออนุญาตของ Google)');
+    try {
+      const r = await api('/api/export/' + kind + rq());
+      S.exportInfo = r;
+      if (r.base64) { try { H.download(r.base64, r.filename); } catch (_) {} }
+      say('สร้างไฟล์ ' + r.filename + ' แล้ว');
+    } catch (e) { say(e.message, 'err'); }
+  }
+
+  document.addEventListener('click', async (ev) => {
+    const tab = ev.target.closest('[data-tab]');
+    if (tab) { S.tab = tab.dataset.tab; load(); return; }
+    const tr = ev.target.closest('[data-trace]');
+    if (tr) {
+      S.modal = 'loading'; render();
+      try { S.modal = await api('/api/trace?code=' + encodeURIComponent(tr.dataset.trace) + rqa()); } catch (e) { S.modal = null; say(e.message, 'err'); }
+      render(); return;
+    }
+    const b = ev.target.closest('[data-act]');
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === 'close-modal') { if (ev.target.closest('.modal') && !ev.target.closest('button')) return; S.modal = null; render(); }
+    else if (act === 'search') { S.q = $('#q').value; S.status = $('#st').value; load(); }
+    else if (act === 'up-bom') upload('bom');
+    else if (act === 'export-mk') exportFile('mk');
+    else if (act === 'export-adjust') exportFile('adjust');
+    else if (act === 'up-stock') upload('stock');
+    else if (act === 'save-tol') {
+      try { await api('/api/admin/tolerance', { method: 'POST', body: JSON.stringify({ tolerance: Number($('#tol').value) }) }); say('บันทึกค่าเผื่อแล้ว'); load(); } catch (e) { say(e.message, 'err'); }
+    } else if (act === 'new-round') {
+      if (!confirm('ปิดรอบ ' + S.meta.round.label + ' และเปิดรอบใหม่ใช่ไหม ปิดแล้วแก้ยอดรอบเก่าไม่ได้')) return;
+      try { await api('/api/admin/round', { method: 'POST', body: JSON.stringify({ label: $('#rlabel').value }) }); S.roundId = ''; say('เปิดรอบใหม่แล้ว อย่าลืมอัปโหลด STOCK PD2 ใหม่'); load(); } catch (e) { say(e.message, 'err'); }
+    }
+  });
+  document.addEventListener('change', (ev) => { if (ev.target.id === 'round') { S.roundId = ev.target.value; load(); } });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'q') { S.q = ev.target.value; S.status = $('#st').value; load(); } });
+
+  load();
+}
+
+if (!window.__NOCONFIG__) { if (window.__PAGE__ === 'pc') startPc(); else startApp(); }
+</script>
+</body>
+</html>
