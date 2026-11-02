@@ -251,6 +251,23 @@ table.t td.n,table.t th.n{text-align:right}
   .pbad .tbad th,.pbad .tbad td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:24px;padding:3px 5px;line-height:16px}
   .pbad .tbad td:nth-child(6){min-width:0}
 }
+/* v7: หัวใบไม่ตรง ไลน์ + % ใหญ่ · กระดาษแนวนอน */
+@page land{size:A4 landscape;margin:8mm}
+@media print{
+  .pbad{page:land}
+  .pbad .phead{display:flex;align-items:center;gap:18px;border:3px solid var(--lc);border-left-width:14px;border-radius:8px;padding:8px 14px;margin:0 0 6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pbad .phead .pl{flex:1}
+  .pbad .phead .pt{font-size:12px;color:#444}
+  .pbad .phead .pline{font-size:30px;font-weight:800;line-height:1.1;color:var(--lc)}
+  .pbad .phead .psub{font-size:12px;color:#555}
+  .pbad .phead .pc{display:flex;gap:14px;font-size:15px}
+  .pbad .phead .pc .okc{color:#1E7B3C}.pbad .phead .pc .badc{color:#C62828}
+  .pbad .phead .pr{text-align:center;background:#14532D;color:#fff;border-radius:8px;padding:4px 14px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pbad .phead .ppct{font-size:34px;font-weight:800;line-height:1.1}
+  .pbad .phead .ppl{font-size:11px}
+  .pbad .tbad td.oth{font-size:9.5px}
+  .pbad .tbad td.oth .mut{color:#999}
+}
 
 </style>
 </head>
@@ -823,15 +840,19 @@ function startApp() {
     const bad = all.filter((r) => r.c.k === 'bad').sort((a, b) => Math.abs(b.c.d) - Math.abs(a.c.d) || b.c.d - a.c.d);
     const pct = n ? Math.round(ok * 1000 / n) / 10 : 0;
     const sgn = (x) => (x > 0 ? '+' : '') + fmt(x);
-    return `<h2>ใบตรวจรายการไม่ตรง SimLex · ไลน์ ${esc(L.name)} · รอบ ${esc((S.meta && S.meta.round && S.meta.round.label) || '')}</h2>
-      <div class="psum"><span>นับมา <b>${n}</b> รายการ</span><span>ตรง <b class="okc">${ok}</b></span><span>ไม่ตรง <b class="badc">${bad.length}</b></span><span>ตรงกับ SimLex <b>${pct}%</b></span></div>
-      <p class="pnote">เรียงจากส่วนต่างมากไปน้อย · ส่วนต่าง = ยอดนับ (รวมทุกไลน์) − SimLex · ช่อง "นับใหม่" และ "สาเหตุ" ให้เขียนมือ</p>
-      <table class="tbad"><colgroup><col style="width:4%"><col style="width:6%"><col style="width:19%"><col style="width:27%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:12%"></colgroup>
-      <thead><tr><th>#</th><th class="n">นับที่</th><th>Item</th><th>ชื่อ</th><th class="n">นับได้</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th>นับใหม่</th><th>สาเหตุ</th></tr></thead>
+    const proc = (e) => e.process || (M && M.info[String(e.code).toUpperCase()] && M.info[String(e.code).toUpperCase()].process) || '';
+    return `<div class="phead" style="--lc:${L.color}">
+        <div class="pl"><div class="pt">ใบตรวจรายการไม่ตรง SimLex · รอบ ${esc((S.meta && S.meta.round && S.meta.round.label) || '')}</div><div class="pline">ไลน์ ${esc(L.name)}</div><div class="psub">${esc(L.sub || '')}</div></div>
+        <div class="pc"><span>นับมา <b>${n}</b> รายการ</span><span>ตรง <b class="okc">${ok}</b></span><span>ไม่ตรง <b class="badc">${bad.length}</b></span></div>
+        <div class="pr"><div class="ppct">${pct}%</div><div class="ppl">ตรงกับ SimLex</div></div>
+      </div>
+      <p class="pnote">เรียงจากส่วนต่างมากไปน้อย · รวม = ไลน์นี้ + ไลน์อื่น · ส่วนต่าง = รวม − SimLex · ช่อง "นับใหม่" และ "สาเหตุ" ให้เขียนมือ</p>
+      <table class="tbad"><colgroup><col style="width:3%"><col style="width:4.5%"><col style="width:15%"><col style="width:15%"><col style="width:9%"><col style="width:6.5%"><col style="width:11%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:7%"><col style="width:9.5%"></colgroup>
+      <thead><tr><th>#</th><th class="n">นับที่</th><th>Item</th><th>ชื่อ</th><th>Process</th><th class="n">ไลน์นี้</th><th>+ ไลน์อื่น</th><th class="n">รวม</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th>นับใหม่</th><th>สาเหตุ</th></tr></thead>
       <tbody>${bad.length ? bad.map((r, i) => {
-        const e = r.e;
-        return `<tr><td>${i + 1}</td><td class="n">${r.seq || '-'}</td><td><b>${esc(e.code)}</b></td><td>${esc(e.name)}</td><td class="n">${fmt(e.qty)}</td><td class="n">${r.c.nosim ? '0' : fmt(r.c.sx)}</td><td class="n d ${diffCls(r.c.d)}"><b>${sgn(r.c.d)}</b></td><td></td><td></td></tr>`;
-      }).join('') : '<tr><td colspan="9" style="text-align:center">ไม่มีรายการไม่ตรง</td></tr>'}</tbody></table>
+        const e = r.e, oth = (e.others || []).filter((o) => o.qty !== null && Number(o.qty) !== 0);
+        return `<tr><td>${i + 1}</td><td class="n">${r.seq || '-'}</td><td><b>${esc(e.code)}</b></td><td>${esc(e.name)}</td><td>${esc(proc(e))}</td><td class="n"><b>${fmt(e.qty)}</b></td><td class="oth">${oth.length ? oth.map((o) => `${esc(o.name)} <b>${fmt(o.qty)}</b>`).join(' · ') : '<span class="mut">-</span>'}</td><td class="n">${fmt(e.total)}</td><td class="n">${r.c.nosim ? '0' : fmt(r.c.sx)}</td><td class="n d ${diffCls(r.c.d)}"><b>${sgn(r.c.d)}</b></td><td></td><td></td></tr>`;
+      }).join('') : '<tr><td colspan="12" style="text-align:center">ไม่มีรายการไม่ตรง</td></tr>'}</tbody></table>
       <p class="pfoot">พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))} &nbsp;·&nbsp; ผู้นับใหม่ ________________ &nbsp;·&nbsp; ผู้ตรวจ ________________</p>`;
   }
   function shownText(rows) { return 'แสดง ' + rows.length + ' จาก ' + S.lineData.entries.length + ' รายการ'; }
