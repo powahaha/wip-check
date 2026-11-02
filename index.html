@@ -268,6 +268,17 @@ table.t td.n,table.t th.n{text-align:right}
   .pbad .tbad td.oth{font-size:9.5px}
   .pbad .tbad td.oth .mut{color:#999}
 }
+/* v8: PC พิมพ์ใบไม่ตรงทุกไลน์ */
+#pall{display:none}
+@media print{
+  body.print-all #app,body.print-all .toast{display:none!important}
+  body.print-all #pall{display:block}
+  #pall .psheet{display:block;break-after:page;page-break-after:always}
+  #pall .psheet:last-child{break-after:auto;page-break-after:auto}
+  #pall .tcover{font-size:13px;margin-top:6px}
+  #pall .tcover td,#pall .tcover th{height:30px}
+  #pall .badc{color:#C62828}
+}
 
 </style>
 </head>
@@ -1329,6 +1340,7 @@ function startPc() {
       if (S.tab === 'overview') S.dash = await api('/api/dashboard' + rq());
       if (S.tab === 'items') S.items = await api('/api/items?q=' + encodeURIComponent(S.q) + '&status=' + S.status + rqa());
       if (S.tab === 'log') S.log = await api('/api/log' + rq());
+      if (S.tab === 'pre') { const r = await api('/api/line/CNC?full=1'); S.pre = buildPre(r.master); }
     } catch (e) { if (e.message !== 'auth') say(e.message, 'err'); }
     render();
   }
@@ -1341,7 +1353,7 @@ function startPc() {
       <a class="btn ghost" style="display:inline-flex;align-items:center;text-decoration:none" href="${H.base}" target="_top">หน้าหัวหน้างาน</a></div>`;
   }
   function tabs() {
-    const t = [['overview', 'ภาพรวม'], ['items', 'รายการ Item'], ['log', 'ประวัติการคีย์'], ['setup', 'นำเข้าไฟล์ / ตั้งค่า']];
+    const t = [['overview', 'ภาพรวม'], ['pre', 'ตรวจก่อนส่ง (% รวม)'], ['items', 'รายการ Item'], ['log', 'ประวัติการคีย์'], ['setup', 'นำเข้าไฟล์ / ตั้งค่า']];
     return `<div class="tabs noprint">${t.map(([k, n]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>`;
   }
 
@@ -1380,6 +1392,99 @@ function startPc() {
           <td class="n">${fmt(r.simlex)}</td><td class="n">${fmt(r.total)}</td><td class="n"><b style="color:#8F1D12">${fmtDiff(r.diff)}</b></td>
           <td style="font-size:14px">${r.candNames.map(esc).join(', ')}</td><td><button class="btn sec sm" data-trace="${esc(r.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">ยังไม่มีรายการที่ไม่ตรง (หรือยังมีไลน์ที่ไม่ได้ส่งยอด)</td></tr>'}</tbody></table></div>
       </div>`;
+  }
+
+  // ---------- ตรวจก่อนส่ง: % รวมทุกไลน์ (Item ไม่ซ้ำ) ใช้ได้ตั้งแต่ไลน์ยังไม่กดส่ง เทียบตรงเป๊ะ (ส่วนต่าง = 0) ----------
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  function buildPre(m) {
+    const info = {}, stock = {}, per = {}, order = {}, sub = m.submitted || {};
+    m.items.forEach((r) => { info[r[0].toUpperCase()] = { code: r[0], name: r[1], process: r[3] }; });
+    m.stock.forEach((r) => { stock[r[0].toUpperCase()] = { code: r[0], name: r[1], qty: Number(r[2]) }; });
+    m.counts.forEach((r) => { const k = r[1].toUpperCase(); (per[k] = per[k] || {})[r[0]] = Number(r[2]); (order[r[0]] = order[r[0]] || []).push(k); });
+    const lname = (id) => ((S.meta && S.meta.lines.find((l) => l.id === id)) || { name: id }).name;
+    const items = Object.keys(per).map((k) => {
+      const it = info[k], st = stock[k], p = per[k];
+      let total = 0; Object.keys(p).forEach((l) => { total += p[l]; });
+      total = r3(total);
+      const sx = st ? st.qty : 0, d = r3(total - sx);
+      return { k, code: (it && it.code) || (st && st.code) || k, name: (it && it.name) || (st && st.name) || '', process: it ? it.process : '',
+        per: p, lines: Object.keys(p), total, simlex: st ? st.qty : null, sx, d, ok: d === 0 };
+    });
+    const byK = {}; items.forEach((x) => { byK[x.k] = x; });
+    const tol = Number(m.tolerance) || 0;
+    const bad = items.filter((x) => !x.ok).sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+    const multi = items.filter((x) => x.lines.length > 1).length;
+    const notCounted = Object.keys(stock).filter((k) => stock[k].qty !== 0 && !per[k]).length;
+    const lines = (S.meta ? S.meta.lines : []).map((L) => {
+      const ks = order[L.id] || [];
+      const rows = ks.map((k, i) => ({ seq: i + 1, x: byK[k], mine: per[k][L.id], others: Object.keys(per[k]).filter((l) => l !== L.id).map((l) => ({ name: lname(l), qty: per[k][l] })) }));
+      const okN = rows.filter((r) => r.x.ok).length;
+      return { L, rows, n: rows.length, ok: okN, bad: rows.length - okN, pct: rows.length ? Math.round(okN * 1000 / rows.length) / 10 : null, submitted: sub[L.id] || null };
+    });
+    const n = items.length, ok = n - bad.length, okTol = items.filter((x) => Math.abs(x.d) <= tol).length;
+    return { items, bad, lines, n, ok, pct: n ? Math.round(ok * 1000 / n) / 10 : null, pctTol: n ? Math.round(okTol * 1000 / n) / 10 : null, tol, multi, notCounted, lname };
+  }
+  function viewPre() {
+    const P = S.pre;
+    if (S.roundId && S.meta && Number(S.roundId) !== S.meta.round.id) return '<div class="banner warn">หน้านี้ดูได้เฉพาะรอบปัจจุบัน เลือกรอบ ' + esc(S.meta.round.label) + ' ที่มุมขวาบน</div>';
+    if (!P) return '<p>กำลังโหลด...</p>';
+    const f = S.preLine || '';
+    const bad = f ? P.bad.filter((x) => x.per[f] !== undefined) : P.bad;
+    return `<div class="banner info" style="margin-bottom:14px;font-weight:500">ดูได้ทันทีตั้งแต่ไลน์ยังไม่กดส่งยอด · นับ Item ซ้ำหลายไลน์เป็น 1 รายการ (เอายอดทุกไลน์มารวมก่อนเทียบ SimLex) · ตรง = ส่วนต่าง 0 เท่านั้น</div>
+      <div class="grid g4" style="margin-bottom:18px">
+        <div class="kpi"><div class="k">ตรงกับ SimLex (รวมทุกไลน์)</div><div class="v" style="color:#14532D">${P.pct === null ? '-' : P.pct + '%'}</div><div class="muted">${P.ok} จาก ${P.n} Item · ถ้าเผื่อ ±${P.tol} = ${P.pctTol === null ? '-' : P.pctTol + '%'}</div></div>
+        <div class="kpi"><div class="k">Item ที่นับ (ไม่ซ้ำ)</div><div class="v" style="color:#17406F">${P.n}</div><div class="muted">อยู่หลายไลน์ ${P.multi} Item (นับเป็น 1)</div></div>
+        <div class="kpi"><div class="k">ไม่ตรง ต้องตามหา</div><div class="v" style="color:#C62828">${P.bad.length}</div><div class="muted">Item</div></div>
+        <div class="kpi"><div class="k">SimLex มีของ แต่ยังไม่มีใครนับ</div><div class="v" style="color:#C25E00">${P.notCounted}</div><div class="muted">ดูได้ที่แท็บ "รายการ Item"</div></div>
+      </div>
+      <div class="card" style="margin-bottom:18px"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="font-size:20px;margin:0">แยกตามไลน์ (ยอดรวมทุกไลน์เทียบ SimLex)</h2>
+        <button class="btn" style="background:#C62828" data-act="print-all-bad">พิมพ์ใบไม่ตรงทุกไลน์ (ไลน์ละ 1 หน้า)</button></div>
+        <div class="scroll-x"><table class="t"><thead><tr><th>ไลน์</th><th class="n">นับมา</th><th class="n">ตรง</th><th class="n">ไม่ตรง</th><th class="n">% ตรง</th><th>ส่งยอด</th><th></th></tr></thead><tbody>
+        ${P.lines.map((l) => `<tr><td><b style="color:${l.L.color}">${esc(l.L.name)}</b></td><td class="n">${l.n}</td><td class="n" style="color:#1E7B3C">${l.ok}</td><td class="n" style="color:#C62828"><b>${l.bad}</b></td><td class="n"><b>${l.pct === null ? '-' : l.pct + '%'}</b></td><td>${l.submitted ? 'ส่งแล้ว ' + thTime(l.submitted) : '<span class="muted">ยังไม่ส่ง</span>'}</td>
+          <td>${l.bad ? `<button class="btn sec sm" data-act="print-line-bad" data-line="${l.L.id}">พิมพ์ไลน์นี้</button>` : ''}</td></tr>`).join('')}
+        <tr style="background:#F2F5F9"><td><b>รวม (Item ไม่ซ้ำ)</b></td><td class="n"><b>${P.n}</b></td><td class="n" style="color:#1E7B3C"><b>${P.ok}</b></td><td class="n" style="color:#C62828"><b>${P.bad.length}</b></td><td class="n"><b>${P.pct === null ? '-' : P.pct + '%'}</b></td><td colspan="2"></td></tr>
+        </tbody></table></div>
+        <p class="muted" style="margin-bottom:0;font-size:15px">ผลรวมของแต่ละไลน์บวกกันจะมากกว่าแถว "รวม" เพราะ Item ที่อยู่หลายไลน์ถูกนับในทุกไลน์ที่เกี่ยวข้อง แต่ในแถวรวมนับเป็น 1</p></div>
+      <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="font-size:20px;margin:0">รายการไม่ตรง ${bad.length} Item (เรียงส่วนต่างมากไปน้อย)</h2>
+        <select id="preline" style="max-width:240px"><option value="">ทุกไลน์</option>${P.lines.map((l) => `<option value="${l.L.id}" ${f === l.L.id ? 'selected' : ''}>${esc(l.L.name)}</option>`).join('')}</select></div>
+        <div class="scroll-x"><table class="t"><thead><tr><th>Item</th><th>Process</th><th>นับได้แยกไลน์</th><th class="n">รวม</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th></th></tr></thead><tbody>
+        ${bad.map((x) => `<tr><td><b>${esc(x.code)}</b><br><span class="muted" style="font-size:14px">${esc(x.name)}</span></td><td style="font-size:14px">${esc(x.process)}</td>
+          <td style="font-size:14px">${x.lines.map((l) => esc(P.lname(l)) + ' <b>' + fmt(x.per[l]) + '</b>').join('<br>')}</td><td class="n">${fmt(x.total)}</td><td class="n">${x.simlex === null ? '0 <span class="muted" style="font-size:13px">(ไม่มี)</span>' : fmt(x.simlex)}</td>
+          <td class="n"><b style="color:${x.d > 0 ? '#1E7B3C' : '#C62828'}">${fmtDiff(x.d)}</b></td><td><button class="btn sec sm" data-trace="${esc(x.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการไม่ตรง</td></tr>'}</tbody></table></div></div>`;
+  }
+  // ใบพิมพ์: หน้าแรกสรุปรวม แล้วไลน์ละ 1 ใบ (รูปแบบเดียวกับใบไม่ตรงบนแท็บเล็ต)
+  function lineSheet(l) {
+    const P = S.pre, L = l.L;
+    const bad = l.rows.filter((r) => !r.x.ok).sort((a, b) => Math.abs(b.x.d) - Math.abs(a.x.d) || b.x.d - a.x.d);
+    const sgn = (x) => (x > 0 ? '+' : '') + fmt(x);
+    const cls = (d) => (d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero');
+    return `<div class="ptable pbad psheet"><div class="phead" style="--lc:${L.color}">
+        <div class="pl"><div class="pt">ใบตรวจรายการไม่ตรง SimLex · รอบ ${esc(S.meta.round.label)}</div><div class="pline">ไลน์ ${esc(L.name)}</div><div class="psub">${esc(L.sub || '')}</div></div>
+        <div class="pc"><span>นับมา <b>${l.n}</b> รายการ</span><span>ตรง <b class="okc">${l.ok}</b></span><span>ไม่ตรง <b class="badc">${l.bad}</b></span></div>
+        <div class="pr"><div class="ppct">${l.pct === null ? '-' : l.pct}%</div><div class="ppl">ตรงกับ SimLex</div></div></div>
+      <p class="pnote">เรียงจากส่วนต่างมากไปน้อย · รวม = ไลน์นี้ + ไลน์อื่น · ส่วนต่าง = รวม − SimLex · ช่อง "นับใหม่" และ "สาเหตุ" ให้เขียนมือ · PC พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</p>
+      <table class="tbad"><colgroup><col style="width:3%"><col style="width:4.5%"><col style="width:15%"><col style="width:15%"><col style="width:9%"><col style="width:6.5%"><col style="width:11%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:7%"><col style="width:9.5%"></colgroup>
+      <thead><tr><th>#</th><th class="n">นับที่</th><th>Item</th><th>ชื่อ</th><th>Process</th><th class="n">ไลน์นี้</th><th>+ ไลน์อื่น</th><th class="n">รวม</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th>นับใหม่</th><th>สาเหตุ</th></tr></thead>
+      <tbody>${bad.map((r, i) => `<tr><td>${i + 1}</td><td class="n">${r.seq}</td><td><b>${esc(r.x.code)}</b></td><td>${esc(r.x.name)}</td><td>${esc(r.x.process)}</td><td class="n"><b>${fmt(r.mine)}</b></td>
+        <td class="oth">${r.others.filter((o) => Number(o.qty) !== 0).map((o) => `${esc(o.name)} <b>${fmt(o.qty)}</b>`).join(' · ') || '<span class="mut">-</span>'}</td><td class="n">${fmt(r.x.total)}</td><td class="n">${fmt(r.x.sx)}</td><td class="n d ${cls(r.x.d)}"><b>${sgn(r.x.d)}</b></td><td></td><td></td></tr>`).join('')}</tbody></table>
+      <p class="pfoot">ผู้นับใหม่ ________________ &nbsp;·&nbsp; ผู้ตรวจ ________________ &nbsp;·&nbsp; แก้ยอดในเว็บแล้วให้หัวหน้าไลน์กดส่งยอด</p></div>`;
+  }
+  function printBad(lineId) {
+    const P = S.pre; if (!P) return;
+    const ls = P.lines.filter((l) => l.bad && (!lineId || l.L.id === lineId));
+    if (!ls.length) { say('ไม่มีรายการไม่ตรง', 'err'); return; }
+    const cover = lineId ? '' : `<div class="ptable pbad psheet pcover"><div class="phead" style="--lc:#17406F"><div class="pl"><div class="pt">สรุปผลนับสต็อก WIP ก่อนส่งยอด · รอบ ${esc(S.meta.round.label)}</div><div class="pline">รวมทุกไลน์</div><div class="psub">Item ซ้ำหลายไลน์นับเป็น 1 · ตรง = ส่วนต่าง 0 · พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</div></div>
+        <div class="pc"><span>Item <b>${P.n}</b></span><span>ตรง <b class="okc">${P.ok}</b></span><span>ไม่ตรง <b class="badc">${P.bad.length}</b></span></div>
+        <div class="pr"><div class="ppct">${P.pct}%</div><div class="ppl">ตรงกับ SimLex</div></div></div>
+      <table class="tbad tcover"><thead><tr><th>ไลน์</th><th class="n">นับมา</th><th class="n">ตรง</th><th class="n">ไม่ตรง</th><th class="n">% ตรง</th><th>ส่งยอด</th><th>รับใบ (ลงชื่อ)</th></tr></thead><tbody>
+      ${P.lines.map((l) => `<tr><td><b style="color:${l.L.color}">${esc(l.L.name)}</b></td><td class="n">${l.n}</td><td class="n">${l.ok}</td><td class="n"><b class="badc">${l.bad}</b></td><td class="n"><b>${l.pct === null ? '-' : l.pct + '%'}</b></td><td>${l.submitted ? 'ส่งแล้ว' : 'ยังไม่ส่ง'}</td><td></td></tr>`).join('')}
+      <tr><td><b>รวม (Item ไม่ซ้ำ)</b></td><td class="n"><b>${P.n}</b></td><td class="n"><b>${P.ok}</b></td><td class="n"><b class="badc">${P.bad.length}</b></td><td class="n"><b>${P.pct}%</b></td><td></td><td></td></tr></tbody></table>
+      <p class="pnote">ยอดเผื่อ ±${P.tol} ชิ้น (สำหรับผู้บริหาร) = ${P.pctTol}% · SimLex มีของแต่ยังไม่มีใครนับ ${P.notCounted} รายการ</p></div>`;
+    let box = document.getElementById('pall'); if (!box) { box = document.createElement('div'); box.id = 'pall'; document.body.appendChild(box); }
+    box.innerHTML = cover + ls.map(lineSheet).join('');
+    document.body.classList.add('print-bad', 'print-all');
+    window.print();
+    setTimeout(() => document.body.classList.remove('print-bad', 'print-all'), 800);
   }
 
   function viewItems() {
@@ -1450,7 +1555,7 @@ function startPc() {
 
   function render() {
     const keep = { q: $('#q') && $('#q') === document.activeElement };
-    const body = { overview: viewOverview, items: viewItems, log: viewLog, setup: viewSetup }[S.tab]();
+    const body = { overview: viewOverview, pre: viewPre, items: viewItems, log: viewLog, setup: viewSetup }[S.tab]();
     // เก็บช่องเลือกไฟล์ตัวเดิมไว้ ไม่ให้ไฟล์ที่เลือกแล้วหายตอนหน้าวาดใหม่
     const files = ['bomfile', 'stockfile'].map((id) => document.getElementById(id)).filter((el) => el && el.files && el.files.length);
     files.forEach((el) => el.remove());
@@ -1507,6 +1612,8 @@ function startPc() {
     if (act === 'close-modal') { if (ev.target.closest('.modal') && !ev.target.closest('button')) return; S.modal = null; render(); }
     else if (act === 'search') { S.q = $('#q').value; S.status = $('#st').value; load(); }
     else if (act === 'up-bom') upload('bom');
+    else if (act === 'print-all-bad') printBad('');
+    else if (act === 'print-line-bad') printBad(b.dataset.line);
     else if (act === 'export-mk') exportFile('mk');
     else if (act === 'export-adjust') exportFile('adjust');
     else if (act === 'up-stock') upload('stock');
@@ -1517,7 +1624,7 @@ function startPc() {
       try { await api('/api/admin/round', { method: 'POST', body: JSON.stringify({ label: $('#rlabel').value }) }); S.roundId = ''; say('เปิดรอบใหม่แล้ว อย่าลืมอัปโหลด STOCK PD2 ใหม่'); load(); } catch (e) { say(e.message, 'err'); }
     }
   });
-  document.addEventListener('change', (ev) => { if (ev.target.id === 'round') { S.roundId = ev.target.value; load(); } });
+  document.addEventListener('change', (ev) => { if (ev.target.id === 'round') { S.roundId = ev.target.value; load(); } if (ev.target.id === 'preline') { S.preLine = ev.target.value; render(); } });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'q') { S.q = ev.target.value; S.status = $('#st').value; load(); } });
 
   load();
