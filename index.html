@@ -145,6 +145,29 @@ table.t td.n,table.t th.n{text-align:right}
 .mbar .pct{font-size:28px;color:#14532D}.mbar .okc{color:#1E7B3C}.mbar .badc{color:#C62828}
 @media (max-width:640px){.entry .nums{flex-wrap:wrap;justify-content:flex-end}.entry .nb{min-width:56px}}
 .entry .nb .sx{font-size:22px}
+/* หน้าเลือกไลน์: การ์ดขนาดเท่ากันทุกใบ + % ตรง */
+.ltiles .tile{height:210px;min-height:0}
+.tile .tstat{display:flex;flex-direction:column;gap:6px}
+.tile .tpct b{font-size:30px;line-height:1}
+.tile .tpct{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}
+/* % บอกชัดว่าเป็น % อะไร */
+.pctw{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
+/* กรอบผลต่าง: ไม่มีคำนำ ตัวเลขกลางกรอบ */
+.entry .dbox{display:flex;align-items:center;justify-content:center;align-self:center;min-width:84px;min-height:56px;padding:4px 10px}
+.entry .dbox b{font-size:24px}
+/* หน้า ของที่มีในไลน์ทั้งหมด */
+.alist{display:flex;flex-direction:column;gap:10px}
+.arow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 14px;border:3px solid var(--line);border-left-width:10px;border-radius:14px;background:#fff;color:var(--ink);min-height:70px}
+.arow .an{min-width:40px;height:40px;border-radius:10px;background:#E4E8EE;color:#3B4655;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 6px}
+.arow .c{flex:1;min-width:0}.arow .code{font-weight:700;font-size:17px;overflow-wrap:anywhere}.arow .nm{font-size:15px;color:var(--muted)}
+.arow .nb{display:flex;flex-direction:column;align-items:flex-end;min-width:76px}
+.arow .nb b{font-size:22px}.arow .sx{color:#111}.arow .cnt{color:#1F5FA6}
+.arow.done{border-color:#1F5FA6;background:#F2F7FD}
+.arow.todo{border-color:#E07B00;background:#FFF6EA}
+.arow.todo .code{color:#9A4F00}
+.arow .todo-t{color:#C25E00;font-size:18px}
+.arow .oth{font-size:14px;color:#3B4655;margin-top:2px}
+.mbar .allc{color:#111}.mbar .todoc{color:#C25E00}
 
 </style>
 </head>
@@ -344,7 +367,7 @@ const H = (() => {
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   }
 
-  return { base, api, readWorkbook, download };
+  return { base, api, readWorkbook, download, xlsx: loadXlsx };
 })();
 
 </script>
@@ -398,6 +421,11 @@ function startApp() {
         const full = await api('/api/line/' + encodeURIComponent(r.line) + '?full=1');
         S.meta = full.meta; S.lineData = full; buildIndex(full.master);
         applyPendingToLine();
+      } else if (r.view === 'lines') {
+        const full = await api('/api/line/' + encodeURIComponent((S.meta && S.meta.lines[0] && S.meta.lines[0].id) || 'CNC') + '?full=1');
+        S.meta = full.meta; buildIndex(full.master);
+      } else if (r.view === 'lineall') {
+        if (!M || !S.meta) { const full = await api('/api/line/' + encodeURIComponent(r.line) + '?full=1'); S.meta = full.meta; S.lineData = full; buildIndex(full.master); }
       } else {
         S.meta = await api('/api/meta');
         if (r.view === 'summary') { await flushQueue(); S.summary = await api('/api/line/' + encodeURIComponent(r.line) + '/summary'); }
@@ -461,6 +489,32 @@ function startApp() {
     return { code: r.code, qty, counted_by: S.who, updated_at: new Date().toISOString(), name: r.name, model: r.model, process: r.process,
       simlex: r.simlex, total: r.total, diff: r.diff, status: r.status,
       others: r.candLines.filter((l) => l !== line).map((l) => ({ line: l, name: lname(l), qty: r.perLine[l] !== undefined ? r.perLine[l] : null, submitted: !!M.submitted[l] })) };
+  }
+  function totalOf(k) { const per = (M && M.counts[k]) || {}; let t = 0; Object.keys(per).forEach((l) => { t += per[l]; }); return r3(t); }
+  function lineStats(line) {
+    if (!M) return null;
+    let n = 0, ok = 0;
+    Object.keys(M.counts).forEach((k) => {
+      if (M.counts[k][line] === undefined) return;
+      n++;
+      const sx = M.stock[k] ? M.stock[k].qty : 0;
+      if (r3(totalOf(k) - sx) === 0) ok++;
+    });
+    return { n, ok, bad: n - ok, pct: n ? Math.round(ok * 1000 / n) / 10 : null };
+  }
+  // รายการของทั้งไลน์: Item ใน BOM ของไลน์นี้ที่ยอด SimLex ไม่เป็น 0 (ติดลบแสดง) + ที่ไลน์นี้นับไว้แล้ว
+  function lineAll(line) {
+    const keys = {};
+    Object.keys(M.cand).forEach((k) => { if (M.cand[k][line] && M.stock[k] && M.stock[k].qty !== 0) keys[k] = true; });
+    Object.keys(M.counts).forEach((k) => { if (M.counts[k][line] !== undefined) keys[k] = true; });
+    return Object.keys(keys).map((k) => {
+      const it = M.info[k], st = M.stock[k], per = M.counts[k] || {};
+      const mine = per[line] !== undefined ? per[line] : null;
+      const others = Object.keys(Object.assign({}, M.cand[k] || {}, per)).filter((l) => l !== line)
+        .map((l) => ({ name: lname(l), qty: per[l] !== undefined ? per[l] : null }));
+      return { code: (it && it.code) || (st && st.code) || k, name: (it && it.name) || (st && st.name) || '', model: it ? it.model : '', process: it ? it.process : '',
+        simlex: st ? st.qty : null, mine, done: mine !== null, others };
+    }).sort((a, b) => (a.done - b.done) || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
   }
   // เลขลำดับ = ลำดับที่นับ (ตัวแรกที่นับ = 1) ใช้เรียกรายการ
   function seqOf(code) {
@@ -588,12 +642,15 @@ function startApp() {
         <label class="l" for="who">ชื่อผู้นับ (ไม่บังคับ ใช้เก็บประวัติว่าใครคีย์)</label>
         <input id="who" type="text" maxlength="40" value="${esc(S.who)}" placeholder="เช่น สมชาย">
       </div>
-      <div class="grid g3">
-        ${m.lines.map((l) => `<button class="tile" style="--tc:${l.color}" data-act="pick-line" data-line="${l.id}">
+      <div class="grid g3 ltiles">
+        ${m.lines.map((l) => { const st = lineStats(l.id) || { n: l.counted, ok: 0, bad: 0, pct: null }; return `<button class="tile" style="--tc:${l.color}" data-act="pick-line" data-line="${l.id}">
           <div><div class="tn">${esc(l.name)}</div><div class="ts">${esc(l.sub)}</div></div>
-          <div><div class="ts" style="font-weight:700">${l.submitted_at ? 'ส่งยอดแล้ว ' + esc(thTime(l.submitted_at)) : 'นับแล้ว ' + l.counted + ' รายการ'}</div>
-          <div class="pbar" style="margin-top:8px"><i style="width:${l.submitted_at ? 100 : (l.counted ? 45 : 0)}%"></i></div></div>
-        </button>`).join('')}
+          <div class="tstat">
+            <div class="ts">${l.submitted_at ? 'ส่งยอดแล้ว ' + esc(thTime(l.submitted_at)) : 'นับแล้ว ' + st.n + ' รายการ'}</div>
+            <div class="tpct">${st.pct === null ? '<span class="ts">ยังไม่มียอดนับ</span>' : `<b>${st.pct}%</b><span class="ts"> ตรงกับ SimLex (${st.ok}/${st.n})</span>`}</div>
+            <div class="pbar"><i style="width:${st.pct || 0}%"></i></div>
+          </div>
+        </button>`; }).join('')}
       </div>
     </div>`;
   }
@@ -625,17 +682,17 @@ function startApp() {
         <div class="r nums">
           <div class="nb"><span class="mut">นับได้</span><b class="cnt">${fmt(e.qty)}</b></div>${multi}
           <div class="nb"><span class="mut">SimLex</span><b class="sx">${c.nosim ? '0' : fmt(c.sx)}</b>${c.nosim ? '<span class="mut">ไม่มีใน SimLex</span>' : ''}</div>
-          <div class="nb dbox ${diffCls(c.d)}"><span class="mut">ส่วนต่าง</span><b>${c.d > 0 ? '+' : ''}${fmt(c.d)}</b></div>
+          <div class="dbox ${diffCls(c.d)}"><b>${c.d > 0 ? '+' : ''}${fmt(c.d)}</b></div>
         </div>
       </button>${locked || d.round.status !== 'open' ? '' : `<button class="del-x" data-act="ask-del" data-code="${esc(e.code)}" data-qty="${esc(e.qty)}" aria-label="ลบรายการ ${esc(e.code)}" title="ลบรายการนี้">&times;</button>`}</div>`;
     }).join('');
     const n = d.entries.length;
     const pct = n ? Math.round(okN * 1000 / n) / 10 : null;
     const sumBar = n ? `<div class="mbar">
-        <div class="mtop"><span>นับมา <b class="cnt">${n}</b> รายการ · ตรง <b class="okc">${okN}</b> · ไม่ตรง <b class="badc">${badN}</b></span><b class="pct">${pct}%</b></div>
+        <div class="mtop"><span>นับมา <b class="cnt">${n}</b> รายการ · ตรง <b class="okc">${okN}</b> · ไม่ตรง <b class="badc">${badN}</b></span><span class="pctw"><span class="mut">ตรงกับ SimLex</span><b class="pct">${pct}%</b></span></div>
         <div class="mtrack"><div class="mfill" style="width:${pct}%"></div></div>
         <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
-          <span class="mut">ส่วนต่าง = ยอดนับรวมทุกไลน์ − SimLex · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</span>
+          <span class="mut">กรอบขวาสุด = ยอดนับรวมทุกไลน์ − SimLex · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</span>
           <button class="btn sec sm" data-act="sort-seq">${S.sortSeq ? 'เรียงล่าสุดไว้บน' : 'เรียงตามเลข 1, 2, 3...'}</button>
         </div>
       </div>` : '';
@@ -650,6 +707,7 @@ function startApp() {
           <div class="row" style="margin-bottom:10px">
             ${window.__WEB__ ? `<button class="btn" style="background:${L.color}" data-act="camera" ${locked ? 'disabled' : ''}>ยิง QR ด้วยกล้อง</button>` : ''}
             <button class="btn sec sm" data-act="kbd">${S.kbd ? 'ซ่อนคีย์บอร์ดบนจอ' : 'พิมพ์เอง (เปิดคีย์บอร์ดบนจอ)'}</button>
+            <button class="btn sec sm" data-act="line-all">ของที่มีในไลน์ทั้งหมด</button>
             <span class="muted">นับแล้ว ${d.entries.length} รายการ</span>
           </div>
         </div>
@@ -694,6 +752,55 @@ function startApp() {
     </div>`;
   }
 
+
+  function viewLineAll() {
+    const L = lineOf(S.line);
+    const list = lineAll(S.line);
+    const done = list.filter((x) => x.done).length, todo = list.length - done;
+    const f = S.allFilter || 'all';
+    const shown = list.filter((x) => f === 'all' || (f === 'todo' ? !x.done : x.done));
+    const rows = shown.map((x, i) => `<button class="arow ${x.done ? 'done' : 'todo'}" data-act="all-pick" data-code="${esc(x.code)}">
+        <div class="an">${i + 1}</div>
+        <div class="c"><div class="code">${esc(x.code)}</div><div class="nm">${esc(x.name)}</div>
+          ${x.others.length ? `<div class="oth">มีที่ไลน์อื่นด้วย: ${x.others.map((o) => esc(o.name) + (o.qty !== null ? ' ' + fmt(o.qty) : ' (ยังไม่นับ)')).join(' · ')}</div>` : ''}</div>
+        <div class="nb"><span class="mut">SimLex</span><b class="sx">${x.simlex === null ? '-' : fmt(x.simlex)}</b></div>
+        <div class="nb st">${x.done ? `<span class="mut">นับแล้ว</span><b class="cnt">${fmt(x.mine)}</b>` : '<b class="todo-t">ยังไม่นับ</b>'}</div>
+      </button>`).join('');
+    return header('ของที่มีในไลน์ - ' + L.name, true, L.color) + `<div class="wrap">
+      <div class="mbar">
+        <div class="mtop"><span>ทั้งหมด <b class="allc">${list.length}</b> รายการ · นับแล้ว <b class="cnt">${done}</b> · ยังไม่นับ <b class="todoc">${todo}</b></span>
+          <span class="pctw"><span class="mut">นับไปแล้ว</span><b class="pct" style="color:#1F5FA6">${list.length ? Math.round(done * 1000 / list.length) / 10 : 0}%</b></span></div>
+        <div class="mtrack" style="background:#FFE3C2"><div class="mfill" style="width:${list.length ? done * 100 / list.length : 0}%;background:#1F5FA6"></div></div>
+        <div class="row" style="gap:8px;justify-content:space-between;align-items:center">
+          <div class="row" style="gap:8px">
+            <button class="btn sm ${f === 'all' ? '' : 'sec'}" data-act="all-filter" data-f="all">ทั้งหมด</button>
+            <button class="btn sm ${f === 'todo' ? '' : 'sec'}" data-act="all-filter" data-f="todo">ยังไม่นับ (${todo})</button>
+            <button class="btn sm ${f === 'done' ? '' : 'sec'}" data-act="all-filter" data-f="done">นับแล้ว (${done})</button>
+          </div>
+          <button class="btn sm" style="background:#1E7B3C" data-act="all-excel">ดาวน์โหลด Excel</button>
+        </div>
+        <div class="mut" style="margin-top:6px">แสดง Item ในรายการ BOM ของไลน์นี้ที่ยอด SimLex ไม่เป็น 0 (ยอดติดลบแสดงด้วย) และที่นับไว้แล้ว · กดรายการเพื่อไปนับ</div>
+      </div>
+      <div class="alist">${rows || '<div class="card muted">ไม่มีรายการ</div>'}</div>
+    </div>`;
+  }
+  async function exportLineAll() {
+    try {
+      await H.xlsx();
+      const L = lineOf(S.line), list = lineAll(S.line);
+      const aoa = [['ลำดับ', 'Item', 'ชื่อ', 'Model', 'Process', 'ยอด SimLex', 'นับได้ (' + L.name + ')', 'สถานะ', 'ไลน์อื่นที่มี Item นี้']];
+      list.forEach((x, i) => aoa.push([i + 1, x.code, x.name, x.model, x.process, x.simlex === null ? '' : x.simlex, x.done ? x.mine : '', x.done ? 'นับแล้ว' : 'ยังไม่นับ',
+        x.others.map((o) => o.name + (o.qty !== null ? ' ' + o.qty : ' (ยังไม่นับ)')).join(', ')]));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{ wch: 6 }, { wch: 24 }, { wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 11 }, { wch: 14 }, { wch: 10 }, { wch: 30 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'ของในไลน์');
+      const round = (S.meta && S.meta.round && S.meta.round.label) || '';
+      XLSX.writeFile(wb, 'ของในไลน์_' + L.name + '_' + round + '.xlsx');
+      toast('ดาวน์โหลดไฟล์ Excel แล้ว', false);
+    } catch (e) { toast('สร้างไฟล์ Excel ไม่สำเร็จ: ' + e.message, true); }
+  }
+
   function viewSummary() {
     const s = S.summary, L = lineOf(s.line);
     const c = s.counts;
@@ -726,7 +833,7 @@ function startApp() {
   function render() {
     const app = $('#app');
     if (!S.meta) { app.innerHTML = '<div class="wrap">กำลังโหลด...</div>'; return; }
-    app.innerHTML = { home: viewHome, lines: viewLines, count: viewCount, summary: viewSummary }[S.view]();
+    app.innerHTML = { home: viewHome, lines: viewLines, count: viewCount, summary: viewSummary, lineall: viewLineAll }[S.view]();
     if (S.view === 'count') {
       const code = $('#code');
       if (code && !S.item && !code.disabled) code.focus({ preventScroll: true });
@@ -866,7 +973,8 @@ function startApp() {
     if (!b) return;
     const act = b.dataset.act;
     if (act === 'back') {
-      if (S.view === 'summary') nav('count', S.line);
+      if (S.view === 'lineall') { R = { view: 'count', line: S.line }; S.view = 'count'; render(); }
+      else if (S.view === 'summary') nav('count', S.line);
       else if (S.view === 'count') nav('lines');
       else nav('home');
     } else if (act === 'go-lines') nav('lines');
@@ -878,6 +986,10 @@ function startApp() {
     else if (act === 'save') save('set');
     else if (act === 'add') save('add');
     else if (act === 'retry') route();
+    else if (act === 'line-all') { S.allFilter = 'all'; nav('lineall', S.line); window.scrollTo(0, 0); }
+    else if (act === 'all-filter') { S.allFilter = b.dataset.f; render(); }
+    else if (act === 'all-excel') exportLineAll();
+    else if (act === 'all-pick') { const c = b.dataset.code; R = { view: 'count', line: S.line }; S.view = 'count'; render(); lookup(c); }
     else if (act === 'sort-seq') { S.sortSeq = !S.sortSeq; keepFocusRender(); }
     else if (act === 'camera') camera();
     else if (act === 'kbd') { S.kbd = !S.kbd; render(); const c = $('#code'); if (c) c.focus(); }
