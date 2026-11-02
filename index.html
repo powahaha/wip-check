@@ -98,6 +98,11 @@ table.t td.n,table.t th.n{text-align:right}
   .card{border:1px solid #bbb}
 }
 
+.entry-wrap{position:relative}
+.del-x{position:absolute;top:-8px;right:-8px;width:36px;height:36px;border-radius:50%;background:#C62828;color:#fff;border:3px solid #fff;font-size:22px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer;padding:0}
+.del-x:active{transform:scale(.92)}
+.confirm-del{max-width:440px;margin-top:12vh}
+
 </style>
 </head>
 <body>
@@ -414,10 +419,10 @@ function startApp() {
   function viewCount() {
     const L = lineOf(S.line), d = S.lineData;
     const locked = !!d.submitted_at;
-    const entries = d.entries.map((e) => `<button class="entry ${S.item && S.item.code.toUpperCase() === e.code.toUpperCase() ? 'sel' : ''}" style="--lc:${L.color}" data-act="open-entry" data-code="${esc(e.code)}">
+    const entries = d.entries.map((e) => `<div class="entry-wrap"><button class="entry ${S.item && S.item.code.toUpperCase() === e.code.toUpperCase() ? 'sel' : ''}" style="--lc:${L.color}" data-act="open-entry" data-code="${esc(e.code)}">
         <div class="c"><div class="code">${esc(e.code)}</div><div class="nm">${esc(e.name)}</div></div>
         <div class="r"><b>${fmt(e.qty)}</b>${chip(e.status)}</div>
-      </button>`).join('');
+      </button>${locked || d.round.status !== 'open' ? '' : `<button class="del-x" data-act="ask-del" data-code="${esc(e.code)}" data-qty="${esc(e.qty)}" aria-label="ลบรายการ ${esc(e.code)}" title="ลบรายการนี้">&times;</button>`}</div>`).join('');
     return header('นับสต็อก - ' + L.name, true, L.color) + `<div class="wrap">
       ${locked ? `<div class="banner info" style="margin-bottom:14px">ไลน์นี้ส่งยอดแล้วเมื่อ ${esc(thTime(d.submitted_at))} &nbsp; <button class="btn sec sm" data-act="reopen">แก้ไขต่อ</button></div>` : ''}
       ${d.round.status !== 'open' ? '<div class="banner warn" style="margin-bottom:14px">รอบนี้ปิดแล้ว ดูได้อย่างเดียว</div>' : ''}
@@ -577,6 +582,34 @@ function startApp() {
     }
   }
 
+  // ---------- ลบรายการ (มีหน้าต่างยืนยันก่อน) ----------
+  function askDelete(code, qty) {
+    const ov = document.createElement('div');
+    ov.className = 'modal-bg';
+    ov.innerHTML = '<div class="modal confirm-del" role="dialog" aria-modal="true">' +
+      '<h2 style="margin:0 0 8px;font-size:22px">ลบรายการนี้ใช่ไหม</h2>' +
+      '<p style="font-size:18px;margin:0 0 4px"><b>' + esc(code) + '</b></p>' +
+      '<p class="muted" style="margin:0 0 18px">ยอดที่นับไว้ ' + esc(fmt(Number(qty))) + ' ของไลน์ ' + esc(lineOf(S.line).name) + ' จะถูกลบ (ประวัติยังเก็บไว้ในหน้า PC)</p>' +
+      '<div class="row" style="gap:12px"><button class="btn sec big" style="flex:1" data-x="no">ยกเลิก</button>' +
+      '<button class="btn big" style="flex:1;background:#C62828" data-x="yes">ลบ</button></div></div>';
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.addEventListener('click', async (ev) => {
+      const x = ev.target.closest('[data-x]');
+      if (ev.target === ov || (x && x.dataset.x === 'no')) { close(); return; }
+      if (!x || x.dataset.x !== 'yes') return;
+      x.disabled = true; x.textContent = 'กำลังลบ...';
+      try {
+        await api('/api/count?line=' + encodeURIComponent(S.line) + '&code=' + encodeURIComponent(code) + '&name=' + encodeURIComponent(S.who || ''), { method: 'DELETE' });
+        close();
+        toast('ลบ ' + code + ' แล้ว', false);
+        if (S.item && S.item.code.toUpperCase() === code.toUpperCase()) S.item = null;
+        route();
+      } catch (e) { close(); toast(e.message, true); }
+    });
+    ov.querySelector('[data-x="no"]').focus();
+  }
+
   document.addEventListener('click', async (ev) => {
     const b = ev.target.closest('[data-act]');
     if (!b) return;
@@ -589,7 +622,8 @@ function startApp() {
     else if (act === 'pick-line') {
       const w = $('#who'); if (w) { S.who = w.value.trim().slice(0, 40); try { localStorage.setItem('who', S.who); } catch (_) {} }
       nav('count', b.dataset.line);
-    } else if (act === 'open-entry') lookup(b.dataset.code, true);
+    } else if (act === 'ask-del') askDelete(b.dataset.code, b.dataset.qty);
+    else if (act === 'open-entry') lookup(b.dataset.code, true);
     else if (act === 'save') save('set');
     else if (act === 'add') save('add');
     else if (act === 'retry') route();
