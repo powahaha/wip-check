@@ -129,6 +129,22 @@ table.t td.n,table.t th.n{text-align:right}
 .entry .pair{display:flex;gap:18px}
 .entry .pair>div{display:flex;flex-direction:column;align-items:flex-end}
 .entry .pair .sx{font-size:22px;color:#3B4655}
+/* หน้าหัวหน้างาน: 2 สถานะ + เลขลำดับ + ส่วนต่าง */
+.entry.m-ok{border-color:#2E9E5B;background:#F3FBF6}
+.entry.m-bad{border-color:#C62828;background:#FFF4F2}
+.entry .seq{flex:0 0 auto;min-width:40px;height:40px;border-radius:10px;background:#17406F;color:#fff;font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center;align-self:flex-start;padding:0 6px}
+.entry .nums{flex-direction:row;align-items:stretch;gap:10px;flex-wrap:nowrap}
+.entry .nb{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;min-width:64px}
+.entry .nb b{font-size:22px;line-height:1.15}
+.entry .cnt,.mbar .cnt{color:#1F5FA6}
+.entry .sx{color:#111}
+.entry .dbox{border:2px solid #9AA5B4;border-radius:10px;padding:4px 10px;background:#fff;min-width:78px}
+.entry .dbox.zero b{color:#111}.entry .dbox.pos b{color:#1E7B3C}.entry .dbox.neg b{color:#C62828}
+.entry .dbox.pos{border-color:#2E9E5B}.entry .dbox.neg{border-color:#C62828}
+.mbar{position:sticky;top:0;z-index:5;box-shadow:0 4px 10px rgba(0,0,0,.08)}
+.mbar .pct{font-size:28px;color:#14532D}.mbar .okc{color:#1E7B3C}.mbar .badc{color:#C62828}
+@media (max-width:640px){.entry .nums{flex-wrap:wrap;justify-content:flex-end}.entry .nb{min-width:56px}}
+.entry .nb .sx{font-size:22px}
 
 </style>
 </head>
@@ -406,8 +422,9 @@ function startApp() {
     m.items.forEach((r) => { info[r[0].toUpperCase()] = { code: r[0], name: r[1], model: r[2], process: r[3] }; });
     m.cand.forEach((r) => { const k = r[1].toUpperCase(); (cand[k] = cand[k] || {})[r[0]] = true; });
     m.stock.forEach((r) => { stock[r[0].toUpperCase()] = { code: r[0], name: r[1], qty: Number(r[2]) }; });
-    m.counts.forEach((r) => { const k = r[1].toUpperCase(); (counts[k] = counts[k] || {})[r[0]] = Number(r[2]); });
-    M = { info, cand, stock, counts, submitted: m.submitted || {}, tol: Number(m.tolerance) || 0, lineIds: m.lineIds || [] };
+    const order = {};
+    m.counts.forEach((r) => { const k = r[1].toUpperCase(); (counts[k] = counts[k] || {})[r[0]] = Number(r[2]); (order[r[0]] = order[r[0]] || []).push(k); });
+    M = { info, cand, stock, counts, order, submitted: m.submitted || {}, tol: Number(m.tolerance) || 0, lineIds: m.lineIds || [] };
   }
   const r3 = (x) => Math.round(x * 1000) / 1000;
   const lname = (id) => lineOf(id).name;
@@ -445,7 +462,15 @@ function startApp() {
       simlex: r.simlex, total: r.total, diff: r.diff, status: r.status,
       others: r.candLines.filter((l) => l !== line).map((l) => ({ line: l, name: lname(l), qty: r.perLine[l] !== undefined ? r.perLine[l] : null, submitted: !!M.submitted[l] })) };
   }
+  // เลขลำดับ = ลำดับที่นับ (ตัวแรกที่นับ = 1) ใช้เรียกรายการ
+  function seqOf(code) {
+    if (!M) return null;
+    const o = M.order[S.line] || [];
+    const i = o.indexOf(String(code).toUpperCase());
+    return i < 0 ? null : i + 1;
+  }
   function putEntry(e) {
+    if (M) { const o = (M.order[S.line] = M.order[S.line] || []); const k = e.code.toUpperCase(); if (o.indexOf(k) < 0) o.push(k); }
     const list = S.lineData.entries.filter((x) => x.code.toUpperCase() !== e.code.toUpperCase());
     list.unshift(e); S.lineData.entries = list;
   }
@@ -573,41 +598,46 @@ function startApp() {
     </div>`;
   }
 
-  // ผลเทียบยอดนับกับ SimLex ของแต่ละรายการ (ดูระหว่างนับ ไม่ต้องรอส่งยอด)
-  function cmpOf(e, tol) {
-    if (e.simlex === null || e.simlex === undefined) return { k: 'nosim', t: 'ไม่มีใน SimLex' };
-    const waitL = (e.others || []).filter((o) => o.qty === null && !o.submitted);
-    if (waitL.length) return { k: 'wait', t: 'รอ ' + waitL.map((o) => o.name).join(', ') };
-    const d = e.diff === null || e.diff === undefined ? r3(e.total - e.simlex) : e.diff;
-    if (d === 0) return { k: 'ok', t: 'ตรง', d };
-    if (Math.abs(d) <= tol) return { k: 'tol', t: 'ต่าง ' + fmtDiff(d) + ' (นับว่าตรง)', d };
-    return { k: 'bad', t: 'ไม่ตรง ต่าง ' + fmtDiff(d), d };
+  // หน้าหัวหน้างาน: เทียบแค่ 2 สถานะ ตรง (ส่วนต่าง = 0) / ไม่ตรง (ไม่ใช้ค่าเผื่อ ±1 ที่หน้านี้)
+  function cmpOf(e) {
+    const sx = e.simlex === null || e.simlex === undefined ? 0 : Number(e.simlex);
+    const d = r3(Number(e.total) - sx);
+    const waitL = (e.others || []).filter((o) => o.qty === null && !o.submitted).map((o) => o.name);
+    return { k: d === 0 ? 'ok' : 'bad', t: d === 0 ? 'ตรง' : 'ไม่ตรง', d, sx, nosim: e.simlex === null || e.simlex === undefined, waitL };
   }
+  const diffCls = (d) => (d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero');
   function viewCount() {
     const L = lineOf(S.line), d = S.lineData;
     const locked = !!d.submitted_at;
-    const tol = Number(d.tolerance) || 0;
-    const tally = { ok: 0, tol: 0, bad: 0, wait: 0, nosim: 0 };
-    const entries = d.entries.map((e) => {
-      const c = cmpOf(e, tol); tally[c.k]++;
+    let okN = 0, badN = 0;
+    const rows = d.entries.map((e, i) => ({ e, c: cmpOf(e), seq: seqOf(e.code), i }));
+    rows.forEach((r) => { if (r.c.k === 'ok') okN++; else badN++; });
+    if (S.sortSeq) rows.sort((a, b) => (a.seq || 1e9) - (b.seq || 1e9));
+    const entries = rows.map(({ e, c, seq }) => {
       const counted = (e.others || []).filter((o) => o.qty !== null);
       const waiting = (e.others || []).filter((o) => o.qty === null);
       const otherTxt = (e.others || []).length
         ? `<div class="oth">มีที่ไลน์อื่นด้วย: ${counted.map((o) => `<b>${esc(o.name)} ${fmt(o.qty)}</b>`).concat(waiting.map((o) => esc(o.name) + (o.submitted ? ' (ส่งแล้ว ไม่มีของ)' : ' (ยังไม่นับ)'))).join(' · ')}</div>` : '';
-      const multi = counted.length && e.total !== e.qty ? `<div class="mut">รวมทุกไลน์ <b>${fmt(e.total)}</b></div>` : '';
+      const multi = counted.length ? `<div class="nb"><span class="mut">รวมทุกไลน์</span><b class="cnt">${fmt(e.total)}</b></div>` : '';
       return `<div class="entry-wrap"><button class="entry m-${c.k} ${S.item && S.item.code.toUpperCase() === e.code.toUpperCase() ? 'sel' : ''}" style="--lc:${L.color}" data-act="open-entry" data-code="${esc(e.code)}">
-        <div class="c"><div class="code">${esc(e.code)}</div><div class="nm">${esc(e.name)}</div>${otherTxt}</div>
-        <div class="r nums"><div class="pair"><div><span class="mut">นับได้</span><b>${fmt(e.qty)}</b></div><div><span class="mut">SimLex</span><b class="sx">${e.simlex === null || e.simlex === undefined ? '-' : fmt(e.simlex)}</b></div></div>${multi}<span class="chip ${c.k === 'nosim' ? 'wait' : c.k}">${esc(c.t)}</span></div>
+        <div class="seq">${seq || '-'}</div>
+        <div class="c"><div class="code">${esc(e.code)}</div><div class="nm">${esc(e.name)}</div>${otherTxt}${c.waitL.length ? `<div class="oth">ยังรอไลน์ ${esc(c.waitL.join(', '))} นับ</div>` : ''}<span class="chip ${c.k}" style="margin-top:6px">${c.t}</span></div>
+        <div class="r nums">
+          <div class="nb"><span class="mut">นับได้</span><b class="cnt">${fmt(e.qty)}</b></div>${multi}
+          <div class="nb"><span class="mut">SimLex</span><b class="sx">${c.nosim ? '0' : fmt(c.sx)}</b>${c.nosim ? '<span class="mut">ไม่มีใน SimLex</span>' : ''}</div>
+          <div class="nb dbox ${diffCls(c.d)}"><span class="mut">ส่วนต่าง</span><b>${c.d > 0 ? '+' : ''}${fmt(c.d)}</b></div>
+        </div>
       </button>${locked || d.round.status !== 'open' ? '' : `<button class="del-x" data-act="ask-del" data-code="${esc(e.code)}" data-qty="${esc(e.qty)}" aria-label="ลบรายการ ${esc(e.code)}" title="ลบรายการนี้">&times;</button>`}</div>`;
     }).join('');
-    const comp = tally.ok + tally.tol + tally.bad;
-    const pct = comp ? Math.round((tally.ok + tally.tol) * 1000 / comp) / 10 : null;
-    const pctExact = comp ? Math.round(tally.ok * 1000 / comp) / 10 : null;
-    const sumBar = d.entries.length ? `<div class="mbar">
-        <div class="mtop"><span>ตรงกับ SimLex (เผื่อ ±${tol})</span><b>${pct === null ? '-' : pct + '%'}</b></div>
-        <div class="mtrack"><div class="mfill" style="width:${pct || 0}%"></div></div>
-        <div class="mleg"><span class="chip ok">ตรง: ${tally.ok}</span><span class="chip tol">ต่าง ±${tol}: ${tally.tol}</span><span class="chip bad">ไม่ตรง: ${tally.bad}</span><span class="chip wait">รอไลน์อื่น: ${tally.wait}</span>${tally.nosim ? `<span class="chip wait">ไม่มีใน SimLex: ${tally.nosim}</span>` : ''}</div>
-        <div class="mut" style="margin-top:4px">คิดจาก ${comp} รายการที่เทียบได้แล้ว · ตรงเป๊ะ ${pctExact === null ? '-' : pctExact + '%'} · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</div>
+    const n = d.entries.length;
+    const pct = n ? Math.round(okN * 1000 / n) / 10 : null;
+    const sumBar = n ? `<div class="mbar">
+        <div class="mtop"><span>นับมา <b class="cnt">${n}</b> รายการ · ตรง <b class="okc">${okN}</b> · ไม่ตรง <b class="badc">${badN}</b></span><b class="pct">${pct}%</b></div>
+        <div class="mtrack"><div class="mfill" style="width:${pct}%"></div></div>
+        <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+          <span class="mut">ส่วนต่าง = ยอดนับรวมทุกไลน์ − SimLex · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</span>
+          <button class="btn sec sm" data-act="sort-seq">${S.sortSeq ? 'เรียงล่าสุดไว้บน' : 'เรียงตามเลข 1, 2, 3...'}</button>
+        </div>
       </div>` : '';
     return header('นับสต็อก - ' + L.name, true, L.color) + `<div class="wrap">
       ${locked ? `<div class="banner info" style="margin-bottom:14px">ไลน์นี้ส่งยอดแล้วเมื่อ ${esc(thTime(d.submitted_at))} &nbsp; <button class="btn sec sm" data-act="reopen">แก้ไขต่อ</button></div>` : ''}
@@ -822,6 +852,7 @@ function startApp() {
         if (S.item && S.item.code.toUpperCase() === code.toUpperCase()) S.item = null;
         if (M) {
           const k = code.toUpperCase(); if (M.counts[k]) delete M.counts[k][S.line];
+          if (M.order[S.line]) M.order[S.line] = M.order[S.line].filter((x) => x !== k);
           S.lineData.entries = S.lineData.entries.filter((e) => e.code.toUpperCase() !== k);
           render();
         } else route();
@@ -847,6 +878,7 @@ function startApp() {
     else if (act === 'save') save('set');
     else if (act === 'add') save('add');
     else if (act === 'retry') route();
+    else if (act === 'sort-seq') { S.sortSeq = !S.sortSeq; keepFocusRender(); }
     else if (act === 'camera') camera();
     else if (act === 'kbd') { S.kbd = !S.kbd; render(); const c = $('#code'); if (c) c.focus(); }
     else if (act === 'summary') nav('summary', S.line);
