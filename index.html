@@ -1340,7 +1340,8 @@ function startPc() {
       if (S.tab === 'overview') S.dash = await api('/api/dashboard' + rq());
       if (S.tab === 'items') S.items = await api('/api/items?q=' + encodeURIComponent(S.q) + '&status=' + S.status + rqa());
       if (S.tab === 'log') S.log = await api('/api/log' + rq());
-      if (S.tab === 'pre') { const r = await api('/api/line/CNC?full=1'); S.pre = buildPre(r.master); }
+      if (S.tab === 'pre' || S.tab === 'trend') { const r = await api('/api/line/CNC?full=1'); S.pre = buildPre(r.master); }
+      if (S.tab === 'trend') S.trendApp = await loadTrendRounds();
     } catch (e) { if (e.message !== 'auth') say(e.message, 'err'); }
     render();
   }
@@ -1353,7 +1354,7 @@ function startPc() {
       <a class="btn ghost" style="display:inline-flex;align-items:center;text-decoration:none" href="${H.base}" target="_top">หน้าหัวหน้างาน</a></div>`;
   }
   function tabs() {
-    const t = [['overview', 'ภาพรวม'], ['pre', 'ตรวจก่อนส่ง (% รวม)'], ['items', 'รายการ Item'], ['log', 'ประวัติการคีย์'], ['setup', 'นำเข้าไฟล์ / ตั้งค่า']];
+    const t = [['overview', 'ภาพรวม'], ['pre', 'ตรวจก่อนส่ง (% รวม)'], ['trend', 'แนวโน้ม / รายงานเดือน'], ['items', 'รายการ Item'], ['log', 'ประวัติการคีย์'], ['setup', 'นำเข้าไฟล์ / ตั้งค่า']];
     return `<div class="tabs noprint">${t.map(([k, n]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>`;
   }
 
@@ -1487,6 +1488,125 @@ function startPc() {
     setTimeout(() => document.body.classList.remove('print-bad', 'print-all'), 800);
   }
 
+  // ---------- รายงานประจำเดือน (รูปแบบไฟล์ TOTAL STOCK PD2) + แนวโน้ม ----------
+  // วิธีคิดแบบไฟล์ TOTAL: Balance = PD − SIMLEX, ต่าง ±1 พอดีไม่นับว่าผิด, % = จำนวนที่ Balance เป็น 0 ÷ จำนวน Item
+  const okXl = (d) => d === 0 || Math.abs(d) === 1;
+  // ผลเดือนก่อนๆ จากไฟล์ TOTAL STOCK PD2.xlsx (ชีต, จำนวน Item, ตรง)
+  const HIST = [['28-02-25', 327, 114], ['31-03-25', 313, 130], ['30-04-25', 353, 176], ['30-05-25', 315, 145], ['29-06-25', 303, 162], ['30-07-25', 292, 169],
+    ['29-08-25', 267, 185], ['30-09-25', 266, 192], ['31-10-25', 286, 192], ['31-10-25 (2)', 263, 213], ['24-12-25', 277, 198], ['29-01-26', 286, 215],
+    ['27-02-26', 264, 201], ['31-03-26', 269, 174], ['30-04-26', 298, 225], ['29-05-26', 283, 215], ['29-06-26', 264, 191], ['22-07-26', 284, 242],
+    ['31-08-26', 275, 218], ['29-09-26', 260, 187]];
+  const ddmmyy = (d) => [d.getDate(), d.getMonth() + 1, d.getFullYear() % 100].map((x) => String(x).padStart(2, '0')).join('-');
+  function reportDate() {
+    const m = S.meta, iso = m && m.round && m.round.stock_uploaded_at;
+    return S.repDate || (iso ? new Date(iso) : new Date()).toISOString().slice(0, 10);
+  }
+  async function loadTrendRounds() {
+    const out = [];
+    for (const r of (S.meta.rounds || []).slice().reverse()) {
+      if (r.id === S.meta.round.id) continue;
+      try { const d = await api('/api/dashboard?round=' + r.id); if (d.stats.finalCount) out.push({ label: r.label, n: d.stats.finalCount, ok: d.stats.ok + d.stats.tol, src: 'app' }); } catch (_) {}
+    }
+    return out;
+  }
+  function trendData() {
+    const P = S.pre, rows = HIST.map(([label, n, ok]) => ({ label, n, ok, src: 'xls' })).concat(S.trendApp || []);
+    if (P && P.n) {
+      const ok = P.items.filter((x) => okXl(x.d)).length;
+      rows.push({ label: ddmmyy(new Date(reportDate())) + ' (รอบนี้)', n: P.n, ok, src: 'now' });
+    }
+    rows.forEach((r) => { r.pct = Math.round(r.ok * 1000 / r.n) / 10; });
+    return rows;
+  }
+  function trendSvg(rows) {
+    const W = 1000, H = 300, L = 44, R = 16, T = 26, B = 52, iw = W - L - R, ih = H - T - B;
+    const x = (i) => L + (rows.length === 1 ? iw / 2 : i * iw / (rows.length - 1)), y = (v) => T + ih - v / 100 * ih;
+    const grid = [0, 25, 50, 75, 100].map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#E3E8EF" stroke-width="1"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="12" fill="#6B7684">${v}%</text>`).join('');
+    const pts = rows.map((r, i) => `${x(i)},${y(r.pct)}`).join(' ');
+    const last = rows.length - 1;
+    const marks = rows.map((r, i) => `<g class="tp"><circle cx="${x(i)}" cy="${y(r.pct)}" r="${r.src === 'now' ? 6 : 4.5}" fill="${r.src === 'now' ? '#C25E00' : '#17406F'}" stroke="#fff" stroke-width="2"/>
+      <rect x="${x(i) - 18}" y="${T}" width="36" height="${ih}" fill="transparent"><title>${esc(r.label)}: ${r.pct}% (ตรง ${r.ok} จาก ${r.n} Item)</title></rect>
+      <text x="${x(i)}" y="${H - B + 18}" text-anchor="end" font-size="11" fill="#6B7684" transform="rotate(-35 ${x(i)} ${H - B + 18})">${esc(r.label.replace(' (รอบนี้)', ''))}</text></g>`).join('');
+    const lab = (i) => `<text x="${x(i)}" y="${y(rows[i].pct) - 12}" text-anchor="middle" font-size="13" font-weight="700" fill="#1B2430">${rows[i].pct}%</text>`;
+    let best = 0; rows.forEach((r, i) => { if (r.pct > rows[best].pct) best = i; });
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="% ตรงกับ SimLex รายเดือน">${grid}
+      <polyline points="${pts}" fill="none" stroke="#17406F" stroke-width="2"/>${marks}${lab(0)}${best !== last && best !== 0 ? lab(best) : ''}${lab(last)}</svg>`;
+  }
+  function viewTrend() {
+    if (!S.pre) return '<p>กำลังโหลด...</p>';
+    const rows = trendData(), cur = rows[rows.length - 1], prev = rows[rows.length - 2];
+    const P = S.pre, bal = P.items.filter((x) => !okXl(x.d)).length;
+    return `<div class="card" style="margin-bottom:18px"><div class="row" style="justify-content:space-between;align-items:flex-end">
+        <div><h2 style="font-size:20px;margin:0 0 4px">รายงานประจำเดือน (รูปแบบไฟล์ TOTAL STOCK PD2)</h2>
+        <p class="muted" style="margin:0">ITEM · PART NO. · PART NAME · SIMLEX · PD · Balance · Item ซ้ำหลายไลน์รวมเป็น 1 แถว · ต่าง ±1 ไม่นำมาคิด % (เหมือนไฟล์เดิม)</p></div>
+        <div class="row" style="gap:8px"><label class="muted" for="repdate">วันที่ (ชื่อชีต)</label><input id="repdate" type="date" value="${reportDate()}" style="width:auto;min-height:44px">
+        <button class="btn" style="background:#1E7B3C" data-act="export-total">ดาวน์โหลดชีตเดือนนี้ (.xlsx)</button></div></div>
+        <div class="grid g4" style="margin-top:14px">
+          <div class="kpi" style="background:#F5F7FA"><div class="k">ITEM ทั้งหมด</div><div class="v" style="color:#17406F">${P.n}</div></div>
+          <div class="kpi" style="background:#F5F7FA"><div class="k">ตรง (Balance 0, ±1 นับว่าตรง)</div><div class="v" style="color:#1E7B3C">${P.n - bal}</div></div>
+          <div class="kpi" style="background:#F5F7FA"><div class="k">ไม่ตรง</div><div class="v" style="color:#C62828">${bal}</div></div>
+          <div class="kpi" style="background:#F5F7FA"><div class="k">% ตรง เดือนนี้</div><div class="v" style="color:#14532D">${cur ? cur.pct + '%' : '-'}</div><div class="muted">${prev ? 'เดือนก่อน ' + prev.pct + '% (' + (cur.pct - prev.pct >= 0 ? '+' : '') + (Math.round((cur.pct - prev.pct) * 10) / 10) + ')' : ''}</div></div>
+        </div></div>
+      <div class="card" style="margin-bottom:18px"><h2 style="font-size:20px;margin:0 0 4px">% ตรงกับ SimLex รายเดือน</h2>
+        <p class="muted" style="margin:0 0 8px">เดือนก่อนๆ จากไฟล์ TOTAL STOCK PD2 · จุดสีส้ม = รอบนี้ (คำนวณสดจากยอดในเว็บ) · ชี้ที่จุดเพื่อดูรายละเอียด</p>
+        ${trendSvg(rows)}</div>
+      <div class="card scroll-x"><table class="t"><thead><tr><th>เดือน (ชื่อชีต)</th><th class="n">ITEM</th><th class="n">ตรง</th><th class="n">ไม่ตรง</th><th class="n">% ตรง</th><th>ที่มา</th></tr></thead><tbody>
+        ${rows.slice().reverse().map((r) => `<tr><td><b>${esc(r.label)}</b></td><td class="n">${r.n}</td><td class="n">${r.ok}</td><td class="n">${r.n - r.ok}</td><td class="n"><b>${r.pct}%</b></td><td class="muted" style="font-size:14px">${r.src === 'xls' ? 'ไฟล์ TOTAL STOCK PD2' : r.src === 'now' ? 'เว็บ (รอบปัจจุบัน)' : 'เว็บ (รอบที่ปิดแล้ว)'}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  function loadStyleXlsx() {
+    if (window.__XLSX_STYLE__) return Promise.resolve();
+    return new Promise((ok, bad) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+      sc.onload = () => { window.__XLSX_STYLE__ = true; ok(); };
+      sc.onerror = () => bad(new Error('โหลดตัวสร้าง Excel ไม่ได้ (เช็คเน็ต)'));
+      document.head.appendChild(sc);
+    });
+  }
+  async function exportTotal() {
+    const P = S.pre; if (!P || !P.n) { say('ยังไม่มียอดนับในรอบนี้', 'err'); return; }
+    try {
+      await loadStyleXlsx();
+      const X = window.XLSX, name = ddmmyy(new Date(reportDate()));
+      // เรียงแบบไฟล์เดิม: ตามไลน์ CNC → Friction → Robot → Assy → Hand Welding แล้วตามลำดับที่นับ (ตัวซ้ำเอาครั้งแรก)
+      const seen = {}, list = [];
+      ['CNC', 'FRI', 'RWD', 'ASS', 'HWD'].forEach((id) => { const l = P.lines.find((x) => x.L.id === id); if (l) l.rows.forEach((r) => { if (!seen[r.x.k]) { seen[r.x.k] = 1; list.push(r.x); } }); });
+      P.items.forEach((x) => { if (!seen[x.k]) { seen[x.k] = 1; list.push(x); } });
+      const n = list.length, last = 3 + n, ok = list.filter((x) => okXl(x.d)).length;
+      const bd = { style: 'thin', color: { rgb: 'BFBFBF' } }, border = { top: bd, bottom: bd, left: bd, right: bd };
+      const hd = { font: { bold: true }, alignment: { horizontal: 'center', vertical: 'center' }, border };
+      const ws = {};
+      const put = (a, c) => { ws[a] = c; };
+      put('F1', { t: 'd', v: new Date(reportDate()), z: 'd/m/yyyy' });
+      [['B2', 'ITEM'], ['C2', 'PART NO.'], ['D2', 'PART NAME'], ['E2', 'SIMLEX'], ['F2', 'PD'], ['G2', 'Balance']].forEach(([a, v]) => put(a, { t: 's', v, s: hd }));
+      put('B3', { t: 'n', f: `MAX(B4:B${last})`, v: n, s: hd });
+      put('C3', { t: 'n', f: `COUNTIF(G4:G${last},0)`, v: ok, s: hd });
+      put('D3', { t: 'n', f: '(C3*100/B3)*0.01', v: ok / n, z: '0%', s: hd });
+      put('E3', { t: 's', v: 'STOCK', s: hd }); put('F3', { t: 's', v: 'CHECK', s: hd });
+      put('G3', { t: 'n', f: `SUM(G4:G${last})`, v: 0, z: '0', s: hd });
+      put('L3', { t: 's', v: ' +1-1 ไม่นำมาคำนวน % ' });
+      const red = '0_ ;[Red]\\-0\\ ';
+      let sumG = 0;
+      list.forEach((x, i) => {
+        const r = 4 + i, d = x.d, adj = d === -1 ? 1 : d === 1 ? -1 : 0, g = Math.round((d + adj) * 1000) / 1000; sumG += g;
+        const hl = adj !== 0 ? { fill: { fgColor: { rgb: 'FFFF00' } } } : {};
+        put('B' + r, { t: 'n', v: i + 1, s: { border, alignment: { horizontal: 'center' } } });
+        put('C' + r, { t: 's', v: x.code, s: { border } });
+        put('D' + r, { t: 's', v: x.name || '', s: { border } });
+        put('E' + r, { t: 'n', v: x.sx, z: '0', s: { border } });
+        put('F' + r, { t: 'n', v: x.total, z: '0', s: Object.assign({ border }, hl) });
+        put('G' + r, { t: 'n', f: `ROUND(F${r}-E${r},3)+L${r}`, v: g, z: red, s: { border, font: g !== 0 ? { bold: true } : {} } });
+        put('L' + r, { t: 'n', f: `IFERROR(IF(ROUND(F${r}-E${r},3)=-1,1,IF(ROUND(F${r}-E${r},3)=1,-1,0)),0)`, v: adj, z: red });
+      });
+      ws.G3.v = Math.round(sumG * 1000) / 1000;
+      ws['!ref'] = 'B1:L' + last;
+      ws['!cols'] = [{ wch: 2 }, { wch: 8 }, { wch: 30.9 }, { wch: 34 }, { wch: 10.6 }, { wch: 11.3 }, { wch: 9.6 }, { wch: 6 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 7.5 }];
+      const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, name);
+      X.writeFile(wb, 'WIP ' + name + '.xlsx');
+      say('ดาวน์โหลดชีต ' + name + ' แล้ว (' + n + ' Item, ตรง ' + Math.round(ok * 1000 / n) / 10 + '%) · เปิดแล้วคลิกขวาที่ชื่อชีต → ย้ายหรือคัดลอก ไปไว้ในไฟล์ TOTAL STOCK PD2');
+    } catch (e) { say(e.message, 'err'); }
+  }
+
   function viewItems() {
     const d = S.items;
     return `<div class="card" style="margin-bottom:14px"><div class="row">
@@ -1555,7 +1675,7 @@ function startPc() {
 
   function render() {
     const keep = { q: $('#q') && $('#q') === document.activeElement };
-    const body = { overview: viewOverview, pre: viewPre, items: viewItems, log: viewLog, setup: viewSetup }[S.tab]();
+    const body = { overview: viewOverview, pre: viewPre, trend: viewTrend, items: viewItems, log: viewLog, setup: viewSetup }[S.tab]();
     // เก็บช่องเลือกไฟล์ตัวเดิมไว้ ไม่ให้ไฟล์ที่เลือกแล้วหายตอนหน้าวาดใหม่
     const files = ['bomfile', 'stockfile'].map((id) => document.getElementById(id)).filter((el) => el && el.files && el.files.length);
     files.forEach((el) => el.remove());
@@ -1613,6 +1733,7 @@ function startPc() {
     else if (act === 'search') { S.q = $('#q').value; S.status = $('#st').value; load(); }
     else if (act === 'up-bom') upload('bom');
     else if (act === 'print-all-bad') printBad('');
+    else if (act === 'export-total') exportTotal();
     else if (act === 'print-line-bad') printBad(b.dataset.line);
     else if (act === 'export-mk') exportFile('mk');
     else if (act === 'export-adjust') exportFile('adjust');
@@ -1624,7 +1745,7 @@ function startPc() {
       try { await api('/api/admin/round', { method: 'POST', body: JSON.stringify({ label: $('#rlabel').value }) }); S.roundId = ''; say('เปิดรอบใหม่แล้ว อย่าลืมอัปโหลด STOCK PD2 ใหม่'); load(); } catch (e) { say(e.message, 'err'); }
     }
   });
-  document.addEventListener('change', (ev) => { if (ev.target.id === 'round') { S.roundId = ev.target.value; load(); } if (ev.target.id === 'preline') { S.preLine = ev.target.value; render(); } });
+  document.addEventListener('change', (ev) => { if (ev.target.id === 'round') { S.roundId = ev.target.value; load(); } if (ev.target.id === 'preline') { S.preLine = ev.target.value; render(); } if (ev.target.id === 'repdate') { S.repDate = ev.target.value; render(); } });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'q') { S.q = ev.target.value; S.status = $('#st').value; load(); } });
 
   load();
