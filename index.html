@@ -215,6 +215,13 @@ table.t td.n,table.t th.n{text-align:right}
   .arow .ncol{flex:1 1 0;align-items:flex-start;margin-left:0}
 }
 
+/* v4: ช่องค้นหา/เรียง/กรองรายการในหน้านับ */
+.lbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:10px 0}
+.lbar #lsearch{flex:1 1 220px;min-height:48px}
+.lbar #sortby{flex:0 1 260px;min-height:48px;font-size:16px}
+.fbtns{display:flex;flex-wrap:wrap;gap:8px}
+#shown{font-size:15px}
+
 </style>
 </head>
 <body>
@@ -435,7 +442,7 @@ function startApp() {
   const S = {
     meta: null, view: 'home', line: null, lineData: null, summary: null,
     item: null, qty: '', toast: null, kbd: false, busy: false,
-    who: ''
+    who: '', sort: 'new', fil: 'all', q: ''
   };
   try { S.who = localStorage.getItem('who') || ''; } catch (_) {}
 
@@ -709,14 +716,42 @@ function startApp() {
     return { k: d === 0 ? 'ok' : 'bad', t: d === 0 ? 'ตรง' : 'ไม่ตรง', d, sx, nosim: e.simlex === null || e.simlex === undefined, waitL };
   }
   const diffCls = (d) => (d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero');
-  function viewCount() {
-    const L = lineOf(S.line), d = S.lineData;
-    const locked = !!d.submitted_at;
-    let okN = 0, badN = 0;
-    const rows = d.entries.map((e, i) => ({ e, c: cmpOf(e), seq: seqOf(e.code), i }));
-    rows.forEach((r) => { if (r.c.k === 'ok') okN++; else badN++; });
-    if (S.sortSeq) rows.sort((a, b) => (a.seq || 1e9) - (b.seq || 1e9));
-    const entries = rows.map(({ e, c, seq }) => {
+  const SORTS = { new: 'ล่าสุดไว้บน', seq: 'เลขลำดับ 1, 2, 3...', qty: 'นับได้ (มาก→น้อย)', sx: 'SimLex (มาก→น้อย)', diff: 'ส่วนต่าง (มาก→น้อย)' };
+  // ตัวเลือกสำหรับช่องพิมพ์รหัส: เฉพาะ Item ที่อยู่ในไลน์นี้ (จาก BOM + ที่นับไว้แล้ว) ใช้เป็นตัวช่วยพิมพ์
+  function codeOptions() {
+    if (!M) return '';
+    const L = S.line, keys = {};
+    Object.keys(M.cand).forEach((k) => { if (M.cand[k][L]) keys[k] = true; });
+    Object.keys(M.counts).forEach((k) => { if (M.counts[k][L] !== undefined) keys[k] = true; });
+    return Object.keys(keys).map((k) => {
+      const it = M.info[k], st = M.stock[k];
+      const code = (it && it.code) || (st && st.code) || k, nm = (it && it.name) || (st && st.name) || '';
+      return `<option value="${esc(code)}" label="${esc(nm)}"></option>`;
+    }).join('');
+  }
+  function listRows() {
+    const d = S.lineData;
+    let rows = d.entries.map((e, i) => ({ e, c: cmpOf(e), seq: seqOf(e.code), i }));
+    if (S.fil === 'bad') rows = rows.filter((r) => r.c.k === 'bad');
+    else if (S.fil === 'ok') rows = rows.filter((r) => r.c.k === 'ok');
+    const q = S.q.trim().toUpperCase();
+    if (q) rows = rows.filter((r) => String(r.e.code).toUpperCase().includes(q) || String(r.e.name || '').toUpperCase().includes(q));
+    const num = (x) => (x === null || x === undefined ? 0 : Number(x));
+    if (S.sort === 'seq') rows.sort((a, b) => (a.seq || 1e9) - (b.seq || 1e9));
+    else if (S.sort === 'qty') rows.sort((a, b) => num(b.e.qty) - num(a.e.qty) || a.i - b.i);
+    else if (S.sort === 'sx') rows.sort((a, b) => num(b.c.sx) - num(a.c.sx) || a.i - b.i);
+    else if (S.sort === 'diff') rows.sort((a, b) => Math.abs(b.c.d) - Math.abs(a.c.d) || a.i - b.i);
+    return rows;
+  }
+  function filterBtns() {
+    const d = S.lineData; let okN = 0, badN = 0;
+    d.entries.forEach((e) => { if (cmpOf(e).k === 'ok') okN++; else badN++; });
+    const b = (f, t) => `<button class="btn sm ${S.fil === f ? '' : 'sec'}" data-act="fil" data-f="${f}">${t}</button>`;
+    return b('all', `ทั้งหมด (${d.entries.length})`) + b('bad', `ไม่ตรง (${badN})`) + b('ok', `ตรง (${okN})`);
+  }
+  function entryHTML(rows) {
+    const d = S.lineData, L = lineOf(S.line), locked = !!d.submitted_at;
+    return rows.map(({ e, c, seq }) => {
       const counted = (e.others || []).filter((o) => o.qty !== null);
       const oth = (e.others || []).length
         ? `<div class="oth1">${(e.others || []).map((o) => `<span class="ltag ${o.qty !== null ? 'has' : ''}">${esc(o.name)} ${o.qty !== null ? fmt(o.qty) : (o.submitted ? '0' : 'ยังไม่นับ')}</span>`).join('')}</div>` : '';
@@ -728,23 +763,38 @@ function startApp() {
         <div class="dbox ${diffCls(c.d)}"><b>${c.d > 0 ? '+' : ''}${fmt(c.d)}</b></div>
       </button>${locked || d.round.status !== 'open' ? '' : `<button class="del-x" data-act="ask-del" data-code="${esc(e.code)}" data-qty="${esc(e.qty)}" aria-label="ลบรายการ ${esc(e.code)}" title="ลบรายการนี้">&times;</button>`}</div>`;
     }).join('');
+  }
+  function shownText(rows) { return 'แสดง ' + rows.length + ' จาก ' + S.lineData.entries.length + ' รายการ'; }
+  // วาดเฉพาะส่วนรายการใหม่ ไม่วาดทั้งหน้า (ช่องค้นหาไม่หลุดโฟกัสตอนพิมพ์)
+  function paintList() {
+    if (!S.lineData || S.view !== 'count') return;
+    const rows = listRows(), d = S.lineData;
+    const el = $('#entries'); if (el) el.innerHTML = rows.length ? entryHTML(rows) : `<div class="card muted">${d.entries.length ? 'ไม่มีรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีรายการ ยิง QR หรือพิมพ์รหัส Item เพื่อเริ่มนับ'}</div>`;
+    const sh = $('#shown'); if (sh) sh.textContent = shownText(rows);
+    const fb = $('#fbtns'); if (fb) fb.innerHTML = filterBtns();
+  }
+  function viewCount() {
+    const L = lineOf(S.line), d = S.lineData;
+    const locked = !!d.submitted_at;
+    let okN = 0, badN = 0;
+    d.entries.forEach((e) => { if (cmpOf(e).k === 'ok') okN++; else badN++; });
+    const rows = listRows();
     const n = d.entries.length;
     const pct = n ? Math.round(okN * 1000 / n) / 10 : null;
     const sumBar = n ? `<div class="mbar">
         <div class="mtop"><span>นับมา <b class="cnt">${n}</b> รายการ · ตรง <b class="okc">${okN}</b> · ไม่ตรง <b class="badc">${badN}</b></span><span class="pctw"><span class="mut">ตรงกับ SimLex</span><b class="pct">${pct}%</b></span></div>
         <div class="mtrack"><div class="mfill" style="width:${pct}%"></div></div>
-        <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
-          <span class="mut">กรอบขวาสุด = ยอดนับ (รวมทุกไลน์) − SimLex · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</span>
-          <button class="btn sec sm" data-act="sort-seq">${S.sortSeq ? 'เรียงล่าสุดไว้บน' : 'เรียงตามเลข 1, 2, 3...'}</button>
-        </div>
+        <div class="mut" style="margin-top:6px">กรอบขวาสุด = ยอดนับ (รวมทุกไลน์) − SimLex · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</div>
       </div>` : '';
+    const listHTML = n ? entryHTML(rows) : '';
     return header('นับสต็อก - ' + L.name, true, L.color) + `<div class="wrap">
       ${locked ? `<div class="banner info" style="margin-bottom:14px">ไลน์นี้ส่งยอดแล้วเมื่อ ${esc(thTime(d.submitted_at))} &nbsp; <button class="btn sec sm" data-act="reopen">แก้ไขต่อ</button></div>` : ''}
       ${d.round.status !== 'open' ? '<div class="banner warn" style="margin-bottom:14px">รอบนี้ปิดแล้ว ดูได้อย่างเดียว</div>' : ''}
       <div class="cgrid">
         <div class="a-scan">
           <div class="row" style="flex-wrap:nowrap;margin-bottom:10px">
-            <input id="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="รหัส Item (เครื่องยิงจะพิมพ์ให้เอง)" placeholder="ยิง QR ด้วยเครื่องยิง หรือพิมพ์รหัส Item" inputmode="${S.kbd ? 'text' : 'none'}" style="min-height:56px" ${locked ? 'disabled' : ''}>
+            <input id="code" type="text" list="codes" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="รหัส Item (เครื่องยิงจะพิมพ์ให้เอง)" placeholder="ยิง QR ด้วยเครื่องยิง หรือพิมพ์รหัส Item (พิมพ์บางส่วนแล้วเลือกจากรายการได้)" inputmode="${S.kbd ? 'text' : 'none'}" style="min-height:56px" ${locked ? 'disabled' : ''}>
+            <datalist id="codes">${codeOptions()}</datalist>
           </div>
           <div class="row" style="margin-bottom:10px">
             ${window.__WEB__ ? `<button class="btn" style="background:${L.color}" data-act="camera" ${locked ? 'disabled' : ''}>ยิง QR ด้วยกล้อง</button>` : ''}
@@ -756,7 +806,12 @@ function startApp() {
         <div class="a-panel ${S.item ? '' : 'empty'}" id="panel">${panelItem(L, locked)}</div>
         <div class="a-list">
           ${sumBar}
-          <div id="entries">${entries || '<div class="card muted">ยังไม่มีรายการ ยิง QR หรือพิมพ์รหัส Item เพื่อเริ่มนับ</div>'}</div>
+          <div class="lbar">
+            <input id="lsearch" type="search" value="${esc(S.q)}" placeholder="ค้นหาในรายการ (พิมพ์รหัสหรือชื่อ)" aria-label="ค้นหาในรายการ">
+            <select id="sortby" aria-label="เรียงตาม">${Object.keys(SORTS).map((k) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${SORTS[k]}</option>`).join('')}</select>
+          </div>
+          <div class="lbar"><div id="fbtns" class="fbtns">${filterBtns()}</div><span id="shown" class="mut">${n ? shownText(rows) : ''}</span></div>
+          <div id="entries">${n ? (listHTML || '<div class="card muted">ไม่มีรายการที่ตรงกับตัวกรอง</div>') : '<div class="card muted">ยังไม่มีรายการ ยิง QR หรือพิมพ์รหัส Item เพื่อเริ่มนับ</div>'}</div>
           <button class="btn sec big" style="width:100%;margin-top:6px;min-height:56px;font-size:19px" data-act="summary">ดูสรุปและส่งยอด</button>
         </div>
       </div>
@@ -1080,7 +1135,7 @@ function startApp() {
     else if (act === 'all-filter') { S.allFilter = b.dataset.f; render(); }
     else if (act === 'all-excel') exportLineAll();
     else if (act === 'all-pick') { const c = b.dataset.code; R = { view: 'count', line: S.line }; S.view = 'count'; render(); lookup(c); }
-    else if (act === 'sort-seq') { S.sortSeq = !S.sortSeq; keepFocusRender(); }
+    else if (act === 'fil') { S.fil = b.dataset.f; paintList(); }
     else if (act === 'camera') camera();
     else if (act === 'kbd') { S.kbd = !S.kbd; render(); const c = $('#code'); if (c) c.focus(); }
     else if (act === 'summary') nav('summary', S.line);
@@ -1107,7 +1162,11 @@ function startApp() {
     if (ev.target.id === 'code') { ev.preventDefault(); const v = ev.target.value; ev.target.value = ''; lookup(v); }
     else if (ev.target.id === 'qty') { ev.preventDefault(); save('set'); }
   });
+  document.addEventListener('change', (ev) => {
+    if (ev.target.id === 'sortby') { S.sort = ev.target.value; paintList(); }
+  });
   document.addEventListener('input', (ev) => {
+    if (ev.target.id === 'lsearch') { S.q = ev.target.value; paintList(); return; }
     if (ev.target.id === 'qty') {
       const v = ev.target.value.replace(/[^0-9.]/g, '');
       if (v !== ev.target.value) ev.target.value = v;
