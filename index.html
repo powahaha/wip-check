@@ -222,6 +222,30 @@ table.t td.n,table.t th.n{text-align:right}
 .fbtns{display:flex;flex-wrap:wrap;gap:8px}
 #shown{font-size:15px}
 
+/* v5: รายการแนะนำรหัส (ขึ้นใต้ช่อง ไม่บังช่อง) */
+.sugwrap{position:relative;flex:1;min-width:0}
+.sug{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;background:#fff;border:2px solid #2F7BD3;border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.18);max-height:min(52vh,420px);overflow:auto;padding:4px}
+.sug[hidden]{display:none}
+.sugi{display:flex;gap:12px;align-items:baseline;justify-content:space-between;width:100%;min-height:46px;padding:8px 12px;border:0;border-radius:8px;background:transparent;text-align:left;color:var(--ink)}
+.sugi b{font-size:17px;white-space:nowrap}
+.sugi span{font-size:14px;color:#5B6675;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sugi:hover,.sugi.on{background:#E6F0FB}
+/* ใบพิมพ์รายการไม่ตรง */
+@media print{
+  body.print-bad .cgrid,body.print-bad .banner{display:none!important}
+  body:not(.print-bad) .pbad{display:none!important}
+  .pbad .psum{display:flex;gap:18px;font-size:13px;margin:0 0 4px}
+  .pbad .psum .okc{color:#1E7B3C}.pbad .psum .badc{color:#C62828}
+  .pbad .pnote{font-size:10px;color:#555;margin:0 0 6px}
+  .pbad table{font-size:10.5px}
+  .pbad td.d.pos{color:#1E7B3C}.pbad td.d.neg{color:#C62828}
+  .pbad th.blank{min-width:55px}.pbad th.why{min-width:120px}
+  .pbad td:nth-child(6){min-width:0}
+  .pbad td{height:26px;vertical-align:middle}
+  .pbad small{color:#555}
+  .pbad .pfoot{margin-top:14px;font-size:12px}
+}
+
 </style>
 </head>
 <body>
@@ -718,16 +742,37 @@ function startApp() {
   const diffCls = (d) => (d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero');
   const SORTS = { new: 'ล่าสุดไว้บน', seq: 'เลขลำดับ 1, 2, 3...', qty: 'นับได้ (มาก→น้อย)', sx: 'SimLex (มาก→น้อย)', diff: 'ส่วนต่าง (มาก→น้อย)' };
   // ตัวเลือกสำหรับช่องพิมพ์รหัส: เฉพาะ Item ที่อยู่ในไลน์นี้ (จาก BOM + ที่นับไว้แล้ว) ใช้เป็นตัวช่วยพิมพ์
-  function codeOptions() {
-    if (!M) return '';
+  // ตัวช่วยพิมพ์รหัส: เฉพาะ Item ในไลน์นี้ (BOM + ที่นับไว้แล้ว) ขึ้นใต้ช่องเมื่อพิมพ์ตั้งแต่ 2 ตัว
+  let SUG = { line: null, list: [], shown: [], idx: -1 };
+  function sugList() {
+    if (!M) return [];
+    if (SUG.line === S.line && SUG.n === Object.keys(M.counts).length) return SUG.list;
     const L = S.line, keys = {};
     Object.keys(M.cand).forEach((k) => { if (M.cand[k][L]) keys[k] = true; });
     Object.keys(M.counts).forEach((k) => { if (M.counts[k][L] !== undefined) keys[k] = true; });
-    return Object.keys(keys).map((k) => {
-      const it = M.info[k], st = M.stock[k];
-      const code = (it && it.code) || (st && st.code) || k, nm = (it && it.name) || (st && st.name) || '';
-      return `<option value="${esc(code)}" label="${esc(nm)}"></option>`;
-    }).join('');
+    SUG.list = Object.keys(keys).map((k) => { const it = M.info[k], st = M.stock[k]; return { code: (it && it.code) || (st && st.code) || k, name: (it && it.name) || (st && st.name) || '' }; });
+    SUG.line = S.line; SUG.n = Object.keys(M.counts).length;
+    return SUG.list;
+  }
+  function hideSug() { const b = $('#sug'); if (b) { b.hidden = true; b.innerHTML = ''; } SUG.shown = []; SUG.idx = -1; }
+  function paintSug(v) {
+    const box = $('#sug'); if (!box) return;
+    const q = String(v || '').trim().toUpperCase();
+    if (q.length < 2) { hideSug(); return; }
+    const all = sugList();
+    const starts = all.filter((x) => x.code.toUpperCase().startsWith(q));
+    const rest = all.filter((x) => !x.code.toUpperCase().startsWith(q) && (x.code.toUpperCase().includes(q) || x.name.toUpperCase().includes(q)));
+    SUG.shown = starts.concat(rest).slice(0, 8); SUG.idx = -1;
+    if (!SUG.shown.length) { hideSug(); return; }
+    box.innerHTML = SUG.shown.map((x, i) => `<button type="button" class="sugi" role="option" data-act="sug-pick" data-code="${esc(x.code)}" data-i="${i}"><b>${esc(x.code)}</b><span>${esc(x.name)}</span></button>`).join('');
+    box.hidden = false;
+  }
+  function moveSug(d) {
+    if (!SUG.shown.length) return false;
+    SUG.idx = Math.max(-1, Math.min(SUG.shown.length - 1, SUG.idx + d));
+    document.querySelectorAll('#sug .sugi').forEach((el, i) => el.classList.toggle('on', i === SUG.idx));
+    const on = $('#sug .sugi.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+    return true;
   }
   function listRows() {
     const d = S.lineData;
@@ -764,6 +809,25 @@ function startApp() {
       </button>${locked || d.round.status !== 'open' ? '' : `<button class="del-x" data-act="ask-del" data-code="${esc(e.code)}" data-qty="${esc(e.qty)}" aria-label="ลบรายการ ${esc(e.code)}" title="ลบรายการนี้">&times;</button>`}</div>`;
     }).join('');
   }
+  // ใบงานพิมพ์: เฉพาะรายการไม่ตรง เรียงส่วนต่างมากไปน้อย เอาไปนับใหม่/หาสาเหตุ
+  function badSheet() {
+    const d = S.lineData, L = lineOf(S.line);
+    const all = d.entries.map((e) => ({ e, c: cmpOf(e), seq: seqOf(e.code) }));
+    const ok = all.filter((r) => r.c.k === 'ok').length, n = all.length;
+    const bad = all.filter((r) => r.c.k === 'bad').sort((a, b) => Math.abs(b.c.d) - Math.abs(a.c.d) || b.c.d - a.c.d);
+    const pct = n ? Math.round(ok * 1000 / n) / 10 : 0;
+    const sgn = (x) => (x > 0 ? '+' : '') + fmt(x);
+    return `<h2>ใบตรวจรายการไม่ตรง SimLex · ไลน์ ${esc(L.name)} · รอบ ${esc((S.meta && S.meta.round && S.meta.round.label) || '')}</h2>
+      <div class="psum"><span>นับมา <b>${n}</b> รายการ</span><span>ตรง <b class="okc">${ok}</b></span><span>ไม่ตรง <b class="badc">${bad.length}</b></span><span>ตรงกับ SimLex <b>${pct}%</b></span></div>
+      <p class="pnote">เรียงจากส่วนต่างมากไปน้อย · ส่วนต่าง = ยอดนับ (รวมทุกไลน์) − SimLex · ช่อง "นับใหม่" และ "สาเหตุ" ให้เขียนมือ</p>
+      <table class="tbad"><thead><tr><th>#</th><th>ลำดับนับ</th><th>Item</th><th>ชื่อ</th><th class="n">นับได้</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th>ไลน์อื่น</th><th class="blank">นับใหม่</th><th class="why">สาเหตุ / หมายเหตุ</th></tr></thead>
+      <tbody>${bad.length ? bad.map((r, i) => {
+        const e = r.e, oth = (e.others || []).map((o) => o.name + ' ' + (o.qty !== null ? fmt(o.qty) : (o.submitted ? '0' : 'ยังไม่นับ'))).join(', ');
+        const multi = (e.others || []).some((o) => o.qty !== null);
+        return `<tr><td>${i + 1}</td><td class="n">${r.seq || '-'}</td><td><b>${esc(e.code)}</b></td><td>${esc(e.name)}</td><td class="n">${fmt(e.qty)}${multi ? `<br><small>รวม ${fmt(e.total)}</small>` : ''}</td><td class="n">${r.c.nosim ? '0<br><small>ไม่มีใน SimLex</small>' : fmt(r.c.sx)}</td><td class="n d ${diffCls(r.c.d)}"><b>${sgn(r.c.d)}</b></td><td><small>${esc(oth)}</small></td><td></td><td></td></tr>`;
+      }).join('') : '<tr><td colspan="10" style="text-align:center">ไม่มีรายการไม่ตรง</td></tr>'}</tbody></table>
+      <p class="pfoot">พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))} &nbsp;·&nbsp; ผู้นับใหม่ ________________ &nbsp;·&nbsp; ผู้ตรวจ ________________</p>`;
+  }
   function shownText(rows) { return 'แสดง ' + rows.length + ' จาก ' + S.lineData.entries.length + ' รายการ'; }
   // วาดเฉพาะส่วนรายการใหม่ ไม่วาดทั้งหน้า (ช่องค้นหาไม่หลุดโฟกัสตอนพิมพ์)
   function paintList() {
@@ -793,8 +857,7 @@ function startApp() {
       <div class="cgrid">
         <div class="a-scan">
           <div class="row" style="flex-wrap:nowrap;margin-bottom:10px">
-            <input id="code" type="text" list="codes" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="รหัส Item (เครื่องยิงจะพิมพ์ให้เอง)" placeholder="ยิง QR ด้วยเครื่องยิง หรือพิมพ์รหัส Item (พิมพ์บางส่วนแล้วเลือกจากรายการได้)" inputmode="${S.kbd ? 'text' : 'none'}" style="min-height:56px" ${locked ? 'disabled' : ''}>
-            <datalist id="codes">${codeOptions()}</datalist>
+            <div class="sugwrap"><input id="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="รหัส Item (เครื่องยิงจะพิมพ์ให้เอง)" placeholder="ยิง QR ด้วยเครื่องยิง หรือพิมพ์รหัส Item (พิมพ์บางส่วนแล้วเลือกจากรายการได้)" inputmode="${S.kbd ? 'text' : 'none'}" style="min-height:56px" ${locked ? 'disabled' : ''}><div id="sug" class="sug" role="listbox" hidden></div></div>
           </div>
           <div class="row" style="margin-bottom:10px">
             ${window.__WEB__ ? `<button class="btn" style="background:${L.color}" data-act="camera" ${locked ? 'disabled' : ''}>ยิง QR ด้วยกล้อง</button>` : ''}
@@ -810,11 +873,12 @@ function startApp() {
             <input id="lsearch" type="search" value="${esc(S.q)}" placeholder="ค้นหาในรายการ (พิมพ์รหัสหรือชื่อ)" aria-label="ค้นหาในรายการ">
             <select id="sortby" aria-label="เรียงตาม">${Object.keys(SORTS).map((k) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${SORTS[k]}</option>`).join('')}</select>
           </div>
-          <div class="lbar"><div id="fbtns" class="fbtns">${filterBtns()}</div><span id="shown" class="mut">${n ? shownText(rows) : ''}</span></div>
+          <div class="lbar"><div id="fbtns" class="fbtns">${filterBtns()}</div><span id="shown" class="mut">${n ? shownText(rows) : ''}</span>${badN ? `<button class="btn sm" style="background:#C62828" data-act="print-bad">พิมพ์ใบไม่ตรง (${badN})</button>` : ''}</div>
           <div id="entries">${n ? (listHTML || '<div class="card muted">ไม่มีรายการที่ตรงกับตัวกรอง</div>') : '<div class="card muted">ยังไม่มีรายการ ยิง QR หรือพิมพ์รหัส Item เพื่อเริ่มนับ</div>'}</div>
           <button class="btn sec big" style="width:100%;margin-top:6px;min-height:56px;font-size:19px" data-act="summary">ดูสรุปและส่งยอด</button>
         </div>
       </div>
+      <div class="ptable pbad" id="pbad"></div>
     </div>`;
   }
 
@@ -1136,6 +1200,8 @@ function startApp() {
     else if (act === 'all-excel') exportLineAll();
     else if (act === 'all-pick') { const c = b.dataset.code; R = { view: 'count', line: S.line }; S.view = 'count'; render(); lookup(c); }
     else if (act === 'fil') { S.fil = b.dataset.f; paintList(); }
+    else if (act === 'print-bad') { const el = $('#pbad'); if (el) { el.innerHTML = badSheet(); document.body.classList.add('print-bad'); window.print(); setTimeout(() => document.body.classList.remove('print-bad'), 500); } }
+    else if (act === 'sug-pick') { const c = $('#code'); if (c) c.value = ''; hideSug(); lookup(b.dataset.code); }
     else if (act === 'camera') camera();
     else if (act === 'kbd') { S.kbd = !S.kbd; render(); const c = $('#code'); if (c) c.focus(); }
     else if (act === 'summary') nav('summary', S.line);
@@ -1158,15 +1224,24 @@ function startApp() {
   });
 
   document.addEventListener('keydown', (ev) => {
+    if (ev.target.id === 'code' && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) { if (moveSug(ev.key === 'ArrowDown' ? 1 : -1)) ev.preventDefault(); return; }
+    if (ev.target.id === 'code' && ev.key === 'Escape') { hideSug(); return; }
     if (ev.key !== 'Enter') return;
-    if (ev.target.id === 'code') { ev.preventDefault(); const v = ev.target.value; ev.target.value = ''; lookup(v); }
+    if (ev.target.id === 'code') {
+      ev.preventDefault();
+      const pick = SUG.idx >= 0 && SUG.shown[SUG.idx] ? SUG.shown[SUG.idx].code : null;
+      const v = pick || ev.target.value; ev.target.value = ''; hideSug(); lookup(v);
+    }
     else if (ev.target.id === 'qty') { ev.preventDefault(); save('set'); }
   });
+  // แตะรายการแนะนำแล้วช่องพิมพ์ไม่หลุดโฟกัส / แตะที่อื่นแล้วปิดรายการ
+  document.addEventListener('mousedown', (ev) => { if (ev.target.closest('#sug')) ev.preventDefault(); else if (!ev.target.closest('#code')) hideSug(); });
   document.addEventListener('change', (ev) => {
     if (ev.target.id === 'sortby') { S.sort = ev.target.value; paintList(); }
   });
   document.addEventListener('input', (ev) => {
     if (ev.target.id === 'lsearch') { S.q = ev.target.value; paintList(); return; }
+    if (ev.target.id === 'code') { paintSug(ev.target.value); return; }
     if (ev.target.id === 'qty') {
       const v = ev.target.value.replace(/[^0-9.]/g, '');
       if (v !== ev.target.value) ev.target.value = v;
