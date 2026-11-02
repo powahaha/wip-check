@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>เช็คสต็อก WIP ประจำเดือน</title>
 <style>
-  .entry-wrap .entry{padding-right:36px}
 :root{
   --bg:#F3F5F8; --card:#FFFFFF; --ink:#1B2430; --muted:#46515F; --line:#D5DBE3;
   --navy:#17406F; --ok-bg:#DCF3E4; --ok-fg:#14532D; --tol-bg:#FFF1C7; --tol-fg:#6B4B00;
@@ -100,9 +99,12 @@ table.t td.n,table.t th.n{text-align:right}
 }
 
 .entry-wrap{position:relative}
+.entry-wrap .entry{padding-right:36px}
 .del-x{position:absolute;top:-8px;right:-8px;width:36px;height:36px;border-radius:50%;background:#C62828;color:#fff;border:3px solid #fff;font-size:22px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer;padding:0}
 .del-x:active{transform:scale(.92)}
 .confirm-del{max-width:440px;margin-top:12vh}
+.qbar{position:fixed;left:16px;bottom:16px;z-index:30;background:#17406F;color:#fff;padding:10px 16px;border-radius:12px;font-size:16px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.qbar.err{background:#B4470B}
 
 </style>
 </head>
@@ -351,9 +353,15 @@ function startApp() {
     const r = R;
     S.view = r.view; S.line = r.line; S.item = null; S.qty = '';
     try {
-      S.meta = await api('/api/meta');
-      if (r.view === 'count') S.lineData = await api('/api/line/' + encodeURIComponent(r.line));
-      if (r.view === 'summary') S.summary = await api('/api/line/' + encodeURIComponent(r.line) + '/summary');
+      if (r.view === 'count') {
+        if (!S.meta) render();
+        const full = await api('/api/line/' + encodeURIComponent(r.line) + '?full=1');
+        S.meta = full.meta; S.lineData = full; buildIndex(full.master);
+        applyPendingToLine();
+      } else {
+        S.meta = await api('/api/meta');
+        if (r.view === 'summary') { await flushQueue(); S.summary = await api('/api/line/' + encodeURIComponent(r.line) + '/summary'); }
+      }
     } catch (e) {
       toast(e.message, true);
       if (!S.meta) {
@@ -364,6 +372,130 @@ function startApp() {
     }
     render();
   }
+
+
+  // ---------- ข้อมูลหลักในแท็บเล็ต: ค้นหา Item ทันทีไม่ต้องรอเซิร์ฟเวอร์ ----------
+  let M = null;
+  function buildIndex(m) {
+    if (!m) { M = null; return; }
+    const info = {}, cand = {}, stock = {}, counts = {};
+    m.items.forEach((r) => { info[r[0].toUpperCase()] = { code: r[0], name: r[1], model: r[2], process: r[3] }; });
+    m.cand.forEach((r) => { const k = r[1].toUpperCase(); (cand[k] = cand[k] || {})[r[0]] = true; });
+    m.stock.forEach((r) => { stock[r[0].toUpperCase()] = { code: r[0], name: r[1], qty: Number(r[2]) }; });
+    m.counts.forEach((r) => { const k = r[1].toUpperCase(); (counts[k] = counts[k] || {})[r[0]] = Number(r[2]); });
+    M = { info, cand, stock, counts, submitted: m.submitted || {}, tol: Number(m.tolerance) || 0, lineIds: m.lineIds || [] };
+  }
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  const lname = (id) => lineOf(id).name;
+  // กติกาเดียวกับ analyzeData_ ใน Code.gs (คำนวณเฉพาะ Item เดียว)
+  function rowOf(code) {
+    const k = String(code).toUpperCase();
+    const it = M.info[k], st = M.stock[k], per = M.counts[k] || {};
+    const counted = Object.keys(per);
+    let total = 0; counted.forEach((l) => { total += per[l]; });
+    const set = {}; Object.keys(M.cand[k] || {}).forEach((l) => { set[l] = true; }); counted.forEach((l) => { set[l] = true; });
+    let candLines = Object.keys(set); if (!candLines.length) candLines = M.lineIds.slice();
+    const pending = candLines.filter((l) => !M.submitted[l]);
+    const simlex = st ? st.qty : null;
+    const diff = simlex === null ? null : r3(total - simlex);
+    let status;
+    if (simlex === null) status = 'nosim';
+    else if (pending.length) status = 'wait';
+    else if (diff === 0) status = 'ok';
+    else if (Math.abs(diff) <= M.tol) status = 'tol';
+    else status = 'bad';
+    return { code: (st && st.code) || (it && it.code) || code, name: (it && it.name) || (st && st.name) || '', model: it ? it.model : '', process: it ? it.process : '',
+      simlex, total: r3(total), diff, status, perLine: per, candLines, known: !!(it || st), inBom: !!it, inStock: !!st, candBom: M.cand[k] || {} };
+  }
+  function localLookup(raw) {
+    const r = rowOf(raw);
+    const line = S.line;
+    const set = Object.assign({}, r.candBom); Object.keys(r.perLine).forEach((l) => { set[l] = true; });
+    const others = Object.keys(set).filter((l) => l !== line).map((l) => ({ line: l, name: lname(l), qty: r.perLine[l] !== undefined ? r.perLine[l] : null, submitted: !!M.submitted[l] }));
+    return { code: r.code, known: r.known, inBom: r.inBom, inStock: r.inStock, name: r.name, model: r.model, process: r.process,
+      simlex: r.simlex, mine: r.perLine[line] !== undefined ? r.perLine[line] : null, belongsToLine: !!r.candBom[line], others };
+  }
+  function localEntry(code, qty) {
+    const r = rowOf(code), line = S.line;
+    return { code: r.code, qty, counted_by: S.who, updated_at: new Date().toISOString(), name: r.name, model: r.model, process: r.process,
+      simlex: r.simlex, total: r.total, diff: r.diff, status: r.status,
+      others: r.candLines.filter((l) => l !== line).map((l) => ({ line: l, name: lname(l), qty: r.perLine[l] !== undefined ? r.perLine[l] : null, submitted: !!M.submitted[l] })) };
+  }
+  function putEntry(e) {
+    const list = S.lineData.entries.filter((x) => x.code.toUpperCase() !== e.code.toUpperCase());
+    list.unshift(e); S.lineData.entries = list;
+  }
+
+  // ---------- คิวส่งยอดเบื้องหลัง: กดบันทึกแล้วยิงตัวต่อไปได้เลย ระบบส่งขึ้นชีตเองทีละรายการ ----------
+  const QKEY = 'wipQueue';
+  let Q = [];
+  try { Q = JSON.parse(localStorage.getItem(QKEY) || '[]') || []; } catch (_) { Q = []; }
+  let qRunning = false, qFail = 0, qWaiters = [];
+  const qSave = () => { try { localStorage.setItem(QKEY, JSON.stringify(Q)); } catch (_) {} };
+  function paintQueue() {
+    let el = $('#qbar');
+    if (!Q.length) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'qbar'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.className = 'qbar' + (qFail ? ' err' : '');
+    el.textContent = qFail ? 'ส่งไม่สำเร็จ ' + Q.length + ' รายการ กำลังลองใหม่อัตโนมัติ (เช็คเน็ต)' : 'กำลังส่งขึ้นระบบ ' + Q.length + ' รายการ...';
+  }
+  function enqueue(job) {
+    // รายการเดียวกันที่ยังไม่ได้ส่ง ให้ใช้ยอดล่าสุดแทน (ส่งเป็นยอดสุดท้ายเสมอ ส่งซ้ำได้ไม่ผิด)
+    Q = Q.filter((j, i) => !(i > 0 && j.line === job.line && j.code.toUpperCase() === job.code.toUpperCase()));
+    Q.push(job); qSave(); paintQueue(); runQueue();
+  }
+  async function runQueue() {
+    if (qRunning) return;
+    qRunning = true;
+    while (Q.length) {
+      const job = Q[0];
+      try {
+        const r = await api('/api/count', { method: 'POST', body: JSON.stringify({ line: job.line, code: job.code, qty: job.qty, mode: 'set', name: job.name }) });
+        Q.shift(); qSave(); qFail = 0;
+        if (S.view === 'count' && S.line === job.line && S.lineData && r.entry && !Q.some((j) => j.line === job.line && j.code.toUpperCase() === job.code.toUpperCase())) {
+          const cur = S.lineData.entries.find((x) => x.code.toUpperCase() === r.entry.code.toUpperCase());
+          if (cur) { putEntry(Object.assign({}, r.entry)); keepFocusRender(); }
+        }
+      } catch (e) {
+        const st = e.status || 0;
+        if (st === 409 || st === 400 || st === 404) {
+          Q.shift(); qSave();
+          toast('บันทึก ' + job.code + ' ไม่สำเร็จ: ' + e.message, true);
+          if (S.view === 'count' && S.line === job.line) route();
+        } else {
+          qFail++; paintQueue();
+          await new Promise((ok) => setTimeout(ok, Math.min(30000, 3000 * qFail)));
+        }
+      }
+      paintQueue();
+    }
+    qRunning = false; paintQueue();
+    const w = qWaiters; qWaiters = []; w.forEach((f) => f());
+  }
+  function flushQueue() {
+    if (!Q.length) return Promise.resolve();
+    toast('รอส่งยอดที่ค้างอยู่ให้ครบก่อน...', false);
+    runQueue();
+    return new Promise((ok) => qWaiters.push(ok));
+  }
+  // ถ้าเปิดหน้าไลน์ใหม่ระหว่างยังส่งไม่หมด ให้เห็นยอดที่รอส่งอยู่ด้วย
+  function applyPendingToLine() {
+    if (!M) return;
+    Q.filter((j) => j.line === S.line).forEach((j) => {
+      const k = j.code.toUpperCase(); (M.counts[k] = M.counts[k] || {})[j.line] = j.qty;
+      putEntry(localEntry(j.code, j.qty));
+    });
+  }
+  function keepFocusRender() {
+    // วาดหน้าใหม่โดยไม่ล้างสิ่งที่กำลังพิมพ์อยู่
+    const c = $('#code'), qv = $('#qty');
+    const cv = c ? c.value : '', qq = qv ? qv.value : null;
+    if (qq !== null) S.qty = qq;
+    render();
+    const c2 = $('#code'); if (c2 && cv) c2.value = cv;
+  }
+  window.addEventListener('online', () => { qFail = 0; runQueue(); });
+  setTimeout(runQueue, 1500);
 
   const lineOf = (id) => (S.meta && S.meta.lines.find((l) => l.id === id)) || { id, name: id, color: '#17406F' };
 
@@ -520,6 +652,13 @@ function startApp() {
   async function lookup(raw, fromEntry) {
     const code = String(raw || '').trim();
     if (!code) return;
+    if (M) {
+      const it = localLookup(code);
+      S.item = it;
+      S.qty = it.mine !== null ? String(it.mine) : '';
+      render();
+      return;
+    }
     try {
       const it = await api('/api/lookup?code=' + encodeURIComponent(code) + '&line=' + encodeURIComponent(S.line));
       S.item = it;
@@ -532,6 +671,22 @@ function startApp() {
     if (!S.item || S.busy) return;
     const q = $('#qty') ? $('#qty').value.replace(/,/g, '').trim() : S.qty;
     if (q === '' || !/^\d+(\.\d{1,3})?$/.test(q)) { toast('ใส่จำนวนเป็นตัวเลขก่อน', true); const el = $('#qty'); if (el) el.focus(); return; }
+    if (Number(q) >= 100000 && !confirm('ยอด ' + fmt(Number(q)) + ' ชิ้น สูงผิดปกติ (อาจยิง QR ลงช่องจำนวนโดยไม่ตั้งใจ) ยืนยันบันทึกยอดนี้ใช่ไหม')) {
+      const el = $('#qty'); if (el) { el.value = ''; el.focus(); } return;
+    }
+    if (M) {
+      const code = S.item.code, k = code.toUpperCase();
+      const old = M.counts[k] && M.counts[k][S.line] !== undefined ? M.counts[k][S.line] : null;
+      const next = mode === 'add' && old !== null ? r3(old + Number(q)) : Number(q);
+      (M.counts[k] = M.counts[k] || {})[S.line] = next;
+      const e = localEntry(code, next);
+      putEntry(e);
+      enqueue({ line: S.line, code, qty: next, name: S.who, at: Date.now() });
+      S.item = null; S.qty = '';
+      toast('บันทึกแล้ว ' + code + ' = ' + fmt(next) + (e.status === 'wait' ? ' (รอไลน์อื่น)' : (e.status === 'bad' ? ' (ยังไม่ตรง SimLex)' : '')), false);
+      render();
+      return;
+    }
     S.busy = true;
     try {
       const code = S.item.code;
@@ -601,11 +756,16 @@ function startApp() {
       if (!x || x.dataset.x !== 'yes') return;
       x.disabled = true; x.textContent = 'กำลังลบ...';
       try {
+        await flushQueue();
         await api('/api/count?line=' + encodeURIComponent(S.line) + '&code=' + encodeURIComponent(code) + '&name=' + encodeURIComponent(S.who || ''), { method: 'DELETE' });
         close();
         toast('ลบ ' + code + ' แล้ว', false);
         if (S.item && S.item.code.toUpperCase() === code.toUpperCase()) S.item = null;
-        route();
+        if (M) {
+          const k = code.toUpperCase(); if (M.counts[k]) delete M.counts[k][S.line];
+          S.lineData.entries = S.lineData.entries.filter((e) => e.code.toUpperCase() !== k);
+          render();
+        } else route();
       } catch (e) { close(); toast(e.message, true); }
     });
     ov.querySelector('[data-x="no"]').focus();
@@ -635,6 +795,7 @@ function startApp() {
     else if (act === 'submit') {
       if (!confirm('ส่งยอดไลน์นี้ใช่ไหม หลังส่งแล้วจะแก้ยอดไม่ได้จนกว่าจะกด "แก้ไขต่อ"')) return;
       try {
+        await flushQueue();
         await api('/api/line/' + S.line + '/submit', { method: 'POST', body: JSON.stringify({ name: S.who }) });
         toast('ส่งยอดแล้ว', false);
         route();
@@ -812,7 +973,11 @@ function startPc() {
   function render() {
     const keep = { q: $('#q') && $('#q') === document.activeElement };
     const body = { overview: viewOverview, items: viewItems, log: viewLog, setup: viewSetup }[S.tab]();
+    // เก็บช่องเลือกไฟล์ตัวเดิมไว้ ไม่ให้ไฟล์ที่เลือกแล้วหายตอนหน้าวาดใหม่
+    const files = ['bomfile', 'stockfile'].map((id) => document.getElementById(id)).filter((el) => el && el.files && el.files.length);
+    files.forEach((el) => el.remove());
     $('#app').innerHTML = head() + `<div class="wrap">${tabs()}${S.msg ? `<div class="banner ${S.msg.kind === 'err' ? 'err' : 'good'}" style="margin-bottom:14px">${esc(S.msg.text)}</div>` : ''}${body}</div>${modal()}`;
+    files.forEach((el) => { const fresh = document.getElementById(el.id); if (fresh) fresh.replaceWith(el); });
     if (keep.q) { const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
   }
 
@@ -834,6 +999,7 @@ function startPc() {
         r = await api('/api/admin/stock', { method: 'POST', body: JSON.stringify({ items: parsed.items, file: file.name }) });
         say('อัปโหลด STOCK PD2 แล้ว ' + r.items + ' รายการ (มียอด ' + r.nonZero + ' รายการ, ติดลบ ' + r.negative + ' รายการ)');
       }
+      if (input) input.value = '';
       await load();
     } catch (e) { say(e.message, 'err'); }
   }
