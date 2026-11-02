@@ -1415,7 +1415,11 @@ function startPc() {
     const tol = Number(m.tolerance) || 0;
     const bad = items.filter((x) => !x.ok).sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
     const multi = items.filter((x) => x.lines.length > 1).length;
-    const notCounted = Object.keys(stock).filter((k) => stock[k].qty !== 0 && !per[k]).length;
+    const cand = {}; (m.cand || []).forEach((r) => { const k = r[1].toUpperCase(); (cand[k] = cand[k] || []).push(r[0]); });
+    const notCountedList = Object.keys(stock).filter((k) => stock[k].qty !== 0 && !per[k])
+      .map((k) => ({ code: stock[k].code, name: (info[k] && info[k].name) || stock[k].name || '', process: info[k] ? info[k].process : '', qty: stock[k].qty, lines: (cand[k] || []).map(lname) }))
+      .sort((a, b) => Math.abs(b.qty) - Math.abs(a.qty));
+    const notCounted = notCountedList.length;
     const lines = (S.meta ? S.meta.lines : []).map((L) => {
       const ks = order[L.id] || [];
       const rows = ks.map((k, i) => ({ seq: i + 1, x: byK[k], mine: per[k][L.id], others: Object.keys(per[k]).filter((l) => l !== L.id).map((l) => ({ name: lname(l), qty: per[k][l] })) }));
@@ -1423,7 +1427,7 @@ function startPc() {
       return { L, rows, n: rows.length, ok: okN, bad: rows.length - okN, pct: rows.length ? Math.round(okN * 1000 / rows.length) / 10 : null, submitted: sub[L.id] || null };
     });
     const n = items.length, ok = n - bad.length, okTol = items.filter((x) => Math.abs(x.d) <= tol).length;
-    return { items, bad, lines, n, ok, pct: n ? Math.round(ok * 1000 / n) / 10 : null, pctTol: n ? Math.round(okTol * 1000 / n) / 10 : null, tol, multi, notCounted, lname };
+    return { notCountedList, items, bad, lines, n, ok, pct: n ? Math.round(ok * 1000 / n) / 10 : null, pctTol: n ? Math.round(okTol * 1000 / n) / 10 : null, tol, multi, notCounted, lname };
   }
   function viewPre() {
     const P = S.pre;
@@ -1436,7 +1440,7 @@ function startPc() {
         <div class="kpi"><div class="k">ตรงกับ SimLex (รวมทุกไลน์)</div><div class="v" style="color:#14532D">${P.pct === null ? '-' : P.pct + '%'}</div><div class="muted">${P.ok} จาก ${P.n} Item · ถ้าเผื่อ ±${P.tol} = ${P.pctTol === null ? '-' : P.pctTol + '%'}</div></div>
         <div class="kpi"><div class="k">Item ที่นับ (ไม่ซ้ำ)</div><div class="v" style="color:#17406F">${P.n}</div><div class="muted">อยู่หลายไลน์ ${P.multi} Item (นับเป็น 1)</div></div>
         <div class="kpi"><div class="k">ไม่ตรง ต้องตามหา</div><div class="v" style="color:#C62828">${P.bad.length}</div><div class="muted">Item</div></div>
-        <div class="kpi"><div class="k">SimLex มีของ แต่ยังไม่มีใครนับ</div><div class="v" style="color:#C25E00">${P.notCounted}</div><div class="muted">ดูได้ที่แท็บ "รายการ Item"</div></div>
+        <a class="kpi" href="#notcounted" style="text-decoration:none;color:inherit"><div class="k">SimLex มีของ แต่ยังไม่มีใครนับ</div><div class="v" style="color:#C25E00">${P.notCounted}</div><div class="muted" style="text-decoration:underline">กดดูรายการ (ด้านล่างสุด)</div></a>
       </div>
       <div class="card" style="margin-bottom:18px"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="font-size:20px;margin:0">แยกตามไลน์ (ยอดรวมทุกไลน์เทียบ SimLex)</h2>
         <button class="btn" style="background:#C62828" data-act="print-all-bad">พิมพ์ใบไม่ตรงทุกไลน์ (ไลน์ละ 1 หน้า)</button></div>
@@ -1451,7 +1455,13 @@ function startPc() {
         <div class="scroll-x"><table class="t"><thead><tr><th>Item</th><th>Process</th><th>นับได้แยกไลน์</th><th class="n">รวม</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th></th></tr></thead><tbody>
         ${bad.map((x) => `<tr><td><b>${esc(x.code)}</b><br><span class="muted" style="font-size:14px">${esc(x.name)}</span></td><td style="font-size:14px">${esc(x.process)}</td>
           <td style="font-size:14px">${x.lines.map((l) => esc(P.lname(l)) + ' <b>' + fmt(x.per[l]) + '</b>').join('<br>')}</td><td class="n">${fmt(x.total)}</td><td class="n">${x.simlex === null ? '0 <span class="muted" style="font-size:13px">(ไม่มี)</span>' : fmt(x.simlex)}</td>
-          <td class="n"><b style="color:${x.d > 0 ? '#1E7B3C' : '#C62828'}">${fmtDiff(x.d)}</b></td><td><button class="btn sec sm" data-trace="${esc(x.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการไม่ตรง</td></tr>'}</tbody></table></div></div>`;
+          <td class="n"><b style="color:${x.d > 0 ? '#1E7B3C' : '#C62828'}">${fmtDiff(x.d)}</b></td><td><button class="btn sec sm" data-trace="${esc(x.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการไม่ตรง</td></tr>'}</tbody></table></div></div>
+      <div class="card" id="notcounted" style="margin-top:18px;scroll-margin-top:12px"><div class="row" style="justify-content:space-between;margin-bottom:4px"><h2 style="font-size:20px;margin:0">SimLex มีของ แต่ยังไม่มีใครนับ ${P.notCounted} รายการ</h2>
+        <button class="btn sec sm" data-act="print-notcounted">พิมพ์รายการนี้</button></div>
+        <p class="muted" style="margin:0 0 8px">ยอดใน SimLex ไม่เป็น 0 แต่ไม่มีไลน์ไหนคีย์ยอดนับ · เรียงจากยอดมากไปน้อย · ช่อง "ไลน์ใน BOM" = ไลน์ที่ควรมีของตัวนี้ (ว่าง = ไม่อยู่ใน BOM) · ติดลบ = SimLex ผิด ต้องปรับยอด</p>
+        <div class="scroll-x"><table class="t"><thead><tr><th>#</th><th>Item</th><th>Process</th><th class="n">SimLex</th><th>ไลน์ใน BOM</th><th></th></tr></thead><tbody>
+        ${P.notCountedList.map((x, i) => `<tr><td>${i + 1}</td><td><b>${esc(x.code)}</b><br><span class="muted" style="font-size:14px">${esc(x.name)}</span></td><td style="font-size:14px">${esc(x.process)}</td>
+          <td class="n"><b style="color:${x.qty < 0 ? '#C62828' : '#1B2430'}">${fmt(x.qty)}</b></td><td style="font-size:14px">${x.lines.map(esc).join(', ') || '<span class="muted">ไม่อยู่ใน BOM</span>'}</td><td><button class="btn sec sm" data-trace="${esc(x.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">ไม่มี</td></tr>'}</tbody></table></div></div>`;
   }
   // ใบพิมพ์: หน้าแรกสรุปรวม แล้วไลน์ละ 1 ใบ (รูปแบบเดียวกับใบไม่ตรงบนแท็บเล็ต)
   function lineSheet(l) {
@@ -1469,6 +1479,19 @@ function startPc() {
       <tbody>${bad.map((r, i) => `<tr><td>${i + 1}</td><td class="n">${r.seq}</td><td><b>${esc(r.x.code)}</b></td><td>${esc(r.x.name)}</td><td>${esc(r.x.process)}</td><td class="n"><b>${fmt(r.mine)}</b></td>
         <td class="oth">${r.others.filter((o) => Number(o.qty) !== 0).map((o) => `${esc(o.name)} <b>${fmt(o.qty)}</b>`).join(' · ') || '<span class="mut">-</span>'}</td><td class="n">${fmt(r.x.total)}</td><td class="n">${fmt(r.x.sx)}</td><td class="n d ${cls(r.x.d)}"><b>${sgn(r.x.d)}</b></td><td></td><td></td></tr>`).join('')}</tbody></table>
       <p class="pfoot">ผู้นับใหม่ ________________ &nbsp;·&nbsp; ผู้ตรวจ ________________ &nbsp;·&nbsp; แก้ยอดในเว็บแล้วให้หัวหน้าไลน์กดส่งยอด</p></div>`;
+  }
+  function printNotCounted() {
+    const P = S.pre; if (!P) return;
+    let box = document.getElementById('pall'); if (!box) { box = document.createElement('div'); box.id = 'pall'; document.body.appendChild(box); }
+    box.innerHTML = `<div class="ptable pbad psheet"><div class="phead" style="--lc:#C25E00"><div class="pl"><div class="pt">รอบ ${esc(S.meta.round.label)} · พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</div><div class="pline">SimLex มีของ แต่ยังไม่มีใครนับ</div><div class="psub">ยอด SimLex ไม่เป็น 0 แต่ไม่มีไลน์ไหนคีย์ยอดนับ · ติดลบ = SimLex ผิด</div></div>
+      <div class="pr" style="background:#C25E00"><div class="ppct">${P.notCounted}</div><div class="ppl">รายการ</div></div></div>
+      <table class="tbad"><colgroup><col style="width:4%"><col style="width:20%"><col style="width:22%"><col style="width:12%"><col style="width:8%"><col style="width:14%"><col style="width:8%"><col style="width:12%"></colgroup>
+      <thead><tr><th>#</th><th>Item</th><th>ชื่อ</th><th>Process</th><th class="n">SimLex</th><th>ไลน์ใน BOM</th><th>นับได้</th><th>หมายเหตุ</th></tr></thead><tbody>
+      ${P.notCountedList.map((x, i) => `<tr><td>${i + 1}</td><td><b>${esc(x.code)}</b></td><td>${esc(x.name)}</td><td>${esc(x.process)}</td><td class="n"><b>${fmt(x.qty)}</b></td><td>${esc(x.lines.join(', ') || '-')}</td><td></td><td></td></tr>`).join('')}</tbody></table>
+      <p class="pfoot">ผู้ตรวจ ________________</p></div>`;
+    document.body.classList.add('print-bad', 'print-all');
+    window.print();
+    setTimeout(() => document.body.classList.remove('print-bad', 'print-all'), 800);
   }
   function printBad(lineId) {
     const P = S.pre; if (!P) return;
@@ -1734,6 +1757,7 @@ function startPc() {
     else if (act === 'up-bom') upload('bom');
     else if (act === 'print-all-bad') printBad('');
     else if (act === 'export-total') exportTotal();
+    else if (act === 'print-notcounted') printNotCounted();
     else if (act === 'print-line-bad') printBad(b.dataset.line);
     else if (act === 'export-mk') exportFile('mk');
     else if (act === 'export-adjust') exportFile('adjust');
