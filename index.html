@@ -105,6 +105,30 @@ table.t td.n,table.t th.n{text-align:right}
 .confirm-del{max-width:440px;margin-top:12vh}
 .qbar{position:fixed;left:16px;bottom:16px;z-index:30;background:#17406F;color:#fff;padding:10px 16px;border-radius:12px;font-size:16px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
 .qbar.err{background:#B4470B}
+/* หน้านับ: ช่องยิง > รายละเอียด/ช่องจำนวน > รายการ (จอแคบเรียงบนลงล่าง จอกว้างแบ่งซ้ายขวา) */
+.cgrid{display:grid;grid-template-columns:440px minmax(0,1fr);grid-template-areas:"scan panel" "list panel";gap:0 18px;align-items:start}
+.a-scan{grid-area:scan;min-width:0}.a-panel{grid-area:panel;min-width:0;scroll-margin-top:8px}.a-list{grid-area:list;min-width:0}
+@media (max-width:900px){.cgrid{grid-template-columns:minmax(0,1fr);grid-template-areas:"scan" "panel" "list"}.a-panel.empty{display:none}.a-panel{margin-bottom:14px}}
+.entry{border-left-width:10px}
+.entry.m-ok{border-color:#2E9E5B;background:#F3FBF6}
+.entry.m-tol{border-color:#D9A400;background:#FFFBEB}
+.entry.m-bad{border-color:#C62828;background:#FFF4F2}
+.entry.m-wait,.entry.m-nosim{border-color:#9AA5B4}
+.entry.sel{box-shadow:0 0 0 3px var(--lc,var(--navy))}
+.entry .nums{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.entry .nums b{font-size:22px;line-height:1.1}
+.entry .nums .sx{font-size:17px}
+.entry .mut,.mut{font-size:14px;color:var(--muted)}
+.entry .oth{font-size:14px;margin-top:4px;color:#3B4655}
+.mbar{background:#fff;border:2px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+.mtop{display:flex;justify-content:space-between;align-items:baseline;font-weight:700}
+.mtop b{font-size:28px;color:#14532D}
+.mtrack{height:12px;background:#FDE0DC;border-radius:999px;overflow:hidden;margin:6px 0 8px}
+.mfill{height:100%;background:#2E9E5B}
+.mleg{display:flex;flex-wrap:wrap;gap:6px}
+.entry .pair{display:flex;gap:18px}
+.entry .pair>div{display:flex;flex-direction:column;align-items:flex-end}
+.entry .pair .sx{font-size:22px;color:#3B4655}
 
 </style>
 </head>
@@ -549,18 +573,47 @@ function startApp() {
     </div>`;
   }
 
+  // ผลเทียบยอดนับกับ SimLex ของแต่ละรายการ (ดูระหว่างนับ ไม่ต้องรอส่งยอด)
+  function cmpOf(e, tol) {
+    if (e.simlex === null || e.simlex === undefined) return { k: 'nosim', t: 'ไม่มีใน SimLex' };
+    const waitL = (e.others || []).filter((o) => o.qty === null && !o.submitted);
+    if (waitL.length) return { k: 'wait', t: 'รอ ' + waitL.map((o) => o.name).join(', ') };
+    const d = e.diff === null || e.diff === undefined ? r3(e.total - e.simlex) : e.diff;
+    if (d === 0) return { k: 'ok', t: 'ตรง', d };
+    if (Math.abs(d) <= tol) return { k: 'tol', t: 'ต่าง ' + fmtDiff(d) + ' (นับว่าตรง)', d };
+    return { k: 'bad', t: 'ไม่ตรง ต่าง ' + fmtDiff(d), d };
+  }
   function viewCount() {
     const L = lineOf(S.line), d = S.lineData;
     const locked = !!d.submitted_at;
-    const entries = d.entries.map((e) => `<div class="entry-wrap"><button class="entry ${S.item && S.item.code.toUpperCase() === e.code.toUpperCase() ? 'sel' : ''}" style="--lc:${L.color}" data-act="open-entry" data-code="${esc(e.code)}">
-        <div class="c"><div class="code">${esc(e.code)}</div><div class="nm">${esc(e.name)}</div></div>
-        <div class="r"><b>${fmt(e.qty)}</b>${chip(e.status)}</div>
-      </button>${locked || d.round.status !== 'open' ? '' : `<button class="del-x" data-act="ask-del" data-code="${esc(e.code)}" data-qty="${esc(e.qty)}" aria-label="ลบรายการ ${esc(e.code)}" title="ลบรายการนี้">&times;</button>`}</div>`).join('');
+    const tol = Number(d.tolerance) || 0;
+    const tally = { ok: 0, tol: 0, bad: 0, wait: 0, nosim: 0 };
+    const entries = d.entries.map((e) => {
+      const c = cmpOf(e, tol); tally[c.k]++;
+      const counted = (e.others || []).filter((o) => o.qty !== null);
+      const waiting = (e.others || []).filter((o) => o.qty === null);
+      const otherTxt = (e.others || []).length
+        ? `<div class="oth">มีที่ไลน์อื่นด้วย: ${counted.map((o) => `<b>${esc(o.name)} ${fmt(o.qty)}</b>`).concat(waiting.map((o) => esc(o.name) + (o.submitted ? ' (ส่งแล้ว ไม่มีของ)' : ' (ยังไม่นับ)'))).join(' · ')}</div>` : '';
+      const multi = counted.length && e.total !== e.qty ? `<div class="mut">รวมทุกไลน์ <b>${fmt(e.total)}</b></div>` : '';
+      return `<div class="entry-wrap"><button class="entry m-${c.k} ${S.item && S.item.code.toUpperCase() === e.code.toUpperCase() ? 'sel' : ''}" style="--lc:${L.color}" data-act="open-entry" data-code="${esc(e.code)}">
+        <div class="c"><div class="code">${esc(e.code)}</div><div class="nm">${esc(e.name)}</div>${otherTxt}</div>
+        <div class="r nums"><div class="pair"><div><span class="mut">นับได้</span><b>${fmt(e.qty)}</b></div><div><span class="mut">SimLex</span><b class="sx">${e.simlex === null || e.simlex === undefined ? '-' : fmt(e.simlex)}</b></div></div>${multi}<span class="chip ${c.k === 'nosim' ? 'wait' : c.k}">${esc(c.t)}</span></div>
+      </button>${locked || d.round.status !== 'open' ? '' : `<button class="del-x" data-act="ask-del" data-code="${esc(e.code)}" data-qty="${esc(e.qty)}" aria-label="ลบรายการ ${esc(e.code)}" title="ลบรายการนี้">&times;</button>`}</div>`;
+    }).join('');
+    const comp = tally.ok + tally.tol + tally.bad;
+    const pct = comp ? Math.round((tally.ok + tally.tol) * 1000 / comp) / 10 : null;
+    const pctExact = comp ? Math.round(tally.ok * 1000 / comp) / 10 : null;
+    const sumBar = d.entries.length ? `<div class="mbar">
+        <div class="mtop"><span>ตรงกับ SimLex (เผื่อ ±${tol})</span><b>${pct === null ? '-' : pct + '%'}</b></div>
+        <div class="mtrack"><div class="mfill" style="width:${pct || 0}%"></div></div>
+        <div class="mleg"><span class="chip ok">ตรง: ${tally.ok}</span><span class="chip tol">ต่าง ±${tol}: ${tally.tol}</span><span class="chip bad">ไม่ตรง: ${tally.bad}</span><span class="chip wait">รอไลน์อื่น: ${tally.wait}</span>${tally.nosim ? `<span class="chip wait">ไม่มีใน SimLex: ${tally.nosim}</span>` : ''}</div>
+        <div class="mut" style="margin-top:4px">คิดจาก ${comp} รายการที่เทียบได้แล้ว · ตรงเป๊ะ ${pctExact === null ? '-' : pctExact + '%'} · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</div>
+      </div>` : '';
     return header('นับสต็อก - ' + L.name, true, L.color) + `<div class="wrap">
       ${locked ? `<div class="banner info" style="margin-bottom:14px">ไลน์นี้ส่งยอดแล้วเมื่อ ${esc(thTime(d.submitted_at))} &nbsp; <button class="btn sec sm" data-act="reopen">แก้ไขต่อ</button></div>` : ''}
       ${d.round.status !== 'open' ? '<div class="banner warn" style="margin-bottom:14px">รอบนี้ปิดแล้ว ดูได้อย่างเดียว</div>' : ''}
-      <div class="split">
-        <div class="left">
+      <div class="cgrid">
+        <div class="a-scan">
           <div class="row" style="flex-wrap:nowrap;margin-bottom:10px">
             <input id="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="รหัส Item (เครื่องยิงจะพิมพ์ให้เอง)" placeholder="ยิง QR ด้วยเครื่องยิง หรือพิมพ์รหัส Item" inputmode="${S.kbd ? 'text' : 'none'}" style="min-height:56px" ${locked ? 'disabled' : ''}>
           </div>
@@ -569,10 +622,13 @@ function startApp() {
             <button class="btn sec sm" data-act="kbd">${S.kbd ? 'ซ่อนคีย์บอร์ดบนจอ' : 'พิมพ์เอง (เปิดคีย์บอร์ดบนจอ)'}</button>
             <span class="muted">นับแล้ว ${d.entries.length} รายการ</span>
           </div>
+        </div>
+        <div class="a-panel ${S.item ? '' : 'empty'}" id="panel">${panelItem(L, locked)}</div>
+        <div class="a-list">
+          ${sumBar}
           <div id="entries">${entries || '<div class="card muted">ยังไม่มีรายการ ยิง QR หรือพิมพ์รหัส Item เพื่อเริ่มนับ</div>'}</div>
           <button class="btn sec big" style="width:100%;margin-top:6px;min-height:56px;font-size:19px" data-act="summary">ดูสรุปและส่งยอด</button>
         </div>
-        <div class="right">${panelItem(L, locked)}</div>
       </div>
     </div>`;
   }
@@ -645,6 +701,9 @@ function startApp() {
       const code = $('#code');
       if (code && !S.item && !code.disabled) code.focus({ preventScroll: true });
       else if (S.item && $('#qty') && !$('#qty').disabled) { const q = $('#qty'); q.focus({ preventScroll: true }); q.select(); }
+      // พาไปที่ช่องที่ต้องใช้ต่อทันที: ยิงแล้วเลื่อนไปช่องจำนวน / บันทึกแล้วกลับไปช่องยิง
+      if (S.item) { const p = $('#panel'); if (p) { const r = p.getBoundingClientRect(); if (r.top < 0 || r.bottom > window.innerHeight) p.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }
+      else if (S.scrollTop) { S.scrollTop = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
     }
   }
 
@@ -682,7 +741,7 @@ function startApp() {
       const e = localEntry(code, next);
       putEntry(e);
       enqueue({ line: S.line, code, qty: next, name: S.who, at: Date.now() });
-      S.item = null; S.qty = '';
+      S.item = null; S.qty = ''; S.scrollTop = true;
       toast('บันทึกแล้ว ' + code + ' = ' + fmt(next) + (e.status === 'wait' ? ' (รอไลน์อื่น)' : (e.status === 'bad' ? ' (ยังไม่ตรง SimLex)' : '')), false);
       render();
       return;
