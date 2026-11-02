@@ -419,11 +419,35 @@ const H = (() => {
     return askPromise;
   }
 
+  // กล่องถาม/ยืนยันในหน้าเว็บ (แทน prompt()/confirm() ที่บางเบราว์เซอร์/แอปไม่รองรับ)
+  const escH = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function dialog({ title, msg, input, okText, danger }) {
+    return new Promise((resolve) => {
+      const ov = document.createElement('div');
+      ov.className = 'modal-bg';
+      ov.innerHTML = '<form class="modal" style="max-width:480px" role="dialog" aria-modal="true">' +
+        '<h1 style="font-size:22px;margin:0 0 8px">' + escH(title) + '</h1>' +
+        (msg ? '<p style="font-size:17px;margin:0 0 12px">' + escH(msg) + '</p>' : '') +
+        (input ? '<input id="dlg-in" type="' + (input === 'password' ? 'password' : 'text') + '" autocomplete="off" aria-label="' + escH(title) + '">' : '') +
+        '<div class="row" style="gap:12px;margin-top:16px"><button type="button" class="btn sec big" style="flex:1" data-x="no">ยกเลิก</button>' +
+        '<button type="submit" class="btn big" style="flex:1' + (danger ? ';background:#C62828' : '') + '">' + escH(okText || 'ตกลง') + '</button></div></form>';
+      document.body.appendChild(ov);
+      const inp = ov.querySelector('#dlg-in');
+      const done = (v) => { ov.remove(); resolve(v); };
+      ov.querySelector('[data-x=no]').addEventListener('click', () => done(input ? null : false));
+      ov.addEventListener('click', (e) => { if (e.target === ov) done(input ? null : false); });
+      ov.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); done(input ? inp.value : true); });
+      ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') done(input ? null : false); });
+      (inp || ov.querySelector('[type=submit]')).focus();
+    });
+  }
+  const confirmBox = (msg, okText, danger) => dialog({ title: 'ยืนยัน', msg, okText: okText || 'ยืนยัน', danger });
+
   async function api(path, opt = {}) {
     let res = await rawCall(path, opt);
     if (res.status === 401 && path !== '/api/login') { await askCode(); res = await rawCall(path, opt); }
     else if (res.status === 403 && res.data && res.data.error === 'admin') {
-      const c = prompt('ใส่รหัสผู้ดูแล (PC)');
+      const c = await dialog({ title: 'ใส่รหัสผู้ดูแล (PC)', msg: 'งานนี้ต้องใช้รหัสผู้ดูแล', input: 'password', okText: 'ตกลง' });
       if (c) { setAdmin(c); res = await rawCall(path, opt); }
     }
     if (res.status >= 400) {
@@ -467,7 +491,7 @@ const H = (() => {
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   }
 
-  return { base, api, readWorkbook, download, xlsx: loadXlsx };
+  return { base, api, readWorkbook, download, xlsx: loadXlsx, confirm: confirmBox, dialog };
 })();
 
 </script>
@@ -1103,7 +1127,7 @@ function startApp() {
     if (!S.item || S.busy) return;
     const q = $('#qty') ? $('#qty').value.replace(/,/g, '').trim() : S.qty;
     if (q === '' || !/^\d+(\.\d{1,3})?$/.test(q)) { toast('ใส่จำนวนเป็นตัวเลขก่อน', true); const el = $('#qty'); if (el) el.focus(); return; }
-    if (Number(q) >= 100000 && !confirm('ยอด ' + fmt(Number(q)) + ' ชิ้น สูงผิดปกติ (อาจยิง QR ลงช่องจำนวนโดยไม่ตั้งใจ) ยืนยันบันทึกยอดนี้ใช่ไหม')) {
+    if (Number(q) >= 100000 && !(await H.confirm('ยอด ' + fmt(Number(q)) + ' ชิ้น สูงผิดปกติ (อาจยิง QR ลงช่องจำนวนโดยไม่ตั้งใจ) ยืนยันบันทึกยอดนี้ใช่ไหม', 'บันทึกยอดนี้'))) {
       const el = $('#qty'); if (el) { el.value = ''; el.focus(); } return;
     }
     if (M) {
@@ -1234,14 +1258,14 @@ function startApp() {
     else if (act === 'summary') nav('summary', S.line);
     else if (act === 'print') window.print();
     else if (act === 'submit') {
-      if (!confirm('ส่งยอดไลน์นี้ใช่ไหม หลังส่งแล้วจะแก้ยอดไม่ได้จนกว่าจะกด "แก้ไขต่อ"')) return;
+      if (!(await H.confirm('ส่งยอดไลน์นี้ใช่ไหม หลังส่งแล้วจะแก้ยอดไม่ได้จนกว่าจะกด "แก้ไขต่อ"', 'ส่งยอด'))) return;
       try {
         await flushQueue();
         await api('/api/line/' + S.line + '/submit', { method: 'POST', body: JSON.stringify({ name: S.who }) });
         toast('ส่งยอดแล้ว', false);
         route();
       } catch (e) {
-        if (e.data && e.data.error === 'empty' && confirm('ไลน์นี้ยังไม่มีรายการนับเลย ยืนยันส่งว่า "ไม่มีของ" ใช่ไหม')) {
+        if (e.data && e.data.error === 'empty' && (await H.confirm('ไลน์นี้ยังไม่มีรายการนับเลย ยืนยันส่งว่า "ไม่มีของ" ใช่ไหม', 'ส่งว่าไม่มีของ'))) {
           try { await api('/api/line/' + S.line + '/submit', { method: 'POST', body: JSON.stringify({ name: S.who, confirmEmpty: true }) }); toast('ส่งยอดแล้ว', false); route(); } catch (e2) { toast(e2.message, true); }
         } else if (!(e.data && e.data.error === 'empty')) toast(e.message, true);
       }
@@ -1489,7 +1513,7 @@ function startPc() {
     else if (act === 'save-tol') {
       try { await api('/api/admin/tolerance', { method: 'POST', body: JSON.stringify({ tolerance: Number($('#tol').value) }) }); say('บันทึกค่าเผื่อแล้ว'); load(); } catch (e) { say(e.message, 'err'); }
     } else if (act === 'new-round') {
-      if (!confirm('ปิดรอบ ' + S.meta.round.label + ' และเปิดรอบใหม่ใช่ไหม ปิดแล้วแก้ยอดรอบเก่าไม่ได้')) return;
+      if (!(await H.confirm('ปิดรอบ ' + S.meta.round.label + ' และเปิดรอบใหม่ใช่ไหม ปิดแล้วแก้ยอดรอบเก่าไม่ได้', 'ปิดรอบและเปิดรอบใหม่', true))) return;
       try { await api('/api/admin/round', { method: 'POST', body: JSON.stringify({ label: $('#rlabel').value }) }); S.roundId = ''; say('เปิดรอบใหม่แล้ว อย่าลืมอัปโหลด STOCK PD2 ใหม่'); load(); } catch (e) { say(e.message, 'err'); }
     }
   });
