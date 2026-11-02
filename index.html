@@ -168,6 +168,52 @@ table.t td.n,table.t th.n{text-align:right}
 .arow .todo-t{color:#C25E00;font-size:18px}
 .arow .oth{font-size:14px;color:#3B4655;margin-top:2px}
 .mbar .allc{color:#111}.mbar .todoc{color:#C25E00}
+/* v3: จอกว้างให้รายการเต็มความกว้าง, การ์ดสูงเท่ากัน, คอลัมน์ตัวเลขตรงกัน */
+.cgrid{grid-template-columns:minmax(0,440px) minmax(0,1fr);grid-template-areas:"scan panel" "list list"}
+.a-list{margin-top:12px}
+@media (min-width:901px){.a-panel.empty{align-self:start}}
+.entry{min-height:92px;height:92px;align-items:center;gap:14px;padding:8px 14px;overflow:hidden}
+.entry .c{flex:1;min-width:0;overflow:hidden}
+.entry .code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}
+.entry .code .chip{font-size:12px;padding:1px 8px;vertical-align:2px;margin-left:4px}
+.entry .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oth1{display:flex;gap:6px;flex-wrap:nowrap;overflow:hidden;margin-top:4px}
+.ltag{flex:0 0 auto;font-size:12px;padding:1px 8px;border-radius:999px;background:#E4E8EE;color:#3B4655;white-space:nowrap}
+.ltag.has{background:#E3EEFB;color:#1F5FA6;font-weight:700}
+.entry .seq{align-self:center}
+.ncol{flex:0 0 96px;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;line-height:1.15}
+.ncol b{font-size:22px}.ncol .cnt{color:#1F5FA6}.ncol .sx{color:#111}
+.ncol .tot{font-size:12px;color:var(--muted);white-space:nowrap}
+.entry .dbox{flex:0 0 96px;width:96px;height:56px;min-height:0;align-self:center;margin-right:18px}
+.arow{height:78px;min-height:0;overflow:hidden}
+.arow .code,.arow .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .ncol{flex-basis:100px}
+.mbar{z-index:6}
+@media (max-width:640px){.ncol{flex-basis:70px}.ncol b{font-size:18px}.entry .dbox{flex-basis:70px;width:70px;margin-right:14px}.entry .seq{min-width:32px;height:32px;font-size:15px}}
+.ptable{display:none}
+@media print{
+  .hdr,.mbar,.alist,#qbar{display:none!important}
+  .ptable{display:block}
+  .ptable h2{font-size:16px;margin:0 0 8px}
+  .ptable table{width:100%;border-collapse:collapse;font-size:11px}
+  .ptable th,.ptable td{border:1px solid #888;padding:4px 6px;text-align:left}
+  .ptable th{background:#17406F;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .ptable td.n,.ptable th.n{text-align:right}
+  .ptable td:nth-child(6){min-width:70px}
+  .ptable tr{break-inside:avoid}
+  .wrap{max-width:none;padding:0}
+  @page{size:A4;margin:10mm}
+}
+@media (max-width:640px){
+  .entry{flex-wrap:wrap;height:140px;align-content:center;row-gap:6px}
+  .entry .c{flex:1 1 calc(100% - 60px)}
+  .entry .ncol{flex:1 1 0;align-items:flex-start}
+  .entry .ncol:first-of-type{margin-left:46px}
+  .entry .dbox{margin-right:4px}
+  .arow{flex-wrap:wrap;height:120px;align-content:center;row-gap:4px}
+  .arow .c{flex:1 1 calc(100% - 56px)}
+  .arow .ncol{flex:1 1 0;align-items:flex-start;margin-left:0}
+}
 
 </style>
 </head>
@@ -672,18 +718,14 @@ function startApp() {
     if (S.sortSeq) rows.sort((a, b) => (a.seq || 1e9) - (b.seq || 1e9));
     const entries = rows.map(({ e, c, seq }) => {
       const counted = (e.others || []).filter((o) => o.qty !== null);
-      const waiting = (e.others || []).filter((o) => o.qty === null);
-      const otherTxt = (e.others || []).length
-        ? `<div class="oth">มีที่ไลน์อื่นด้วย: ${counted.map((o) => `<b>${esc(o.name)} ${fmt(o.qty)}</b>`).concat(waiting.map((o) => esc(o.name) + (o.submitted ? ' (ส่งแล้ว ไม่มีของ)' : ' (ยังไม่นับ)'))).join(' · ')}</div>` : '';
-      const multi = counted.length ? `<div class="nb"><span class="mut">รวมทุกไลน์</span><b class="cnt">${fmt(e.total)}</b></div>` : '';
+      const oth = (e.others || []).length
+        ? `<div class="oth1">${(e.others || []).map((o) => `<span class="ltag ${o.qty !== null ? 'has' : ''}">${esc(o.name)} ${o.qty !== null ? fmt(o.qty) : (o.submitted ? '0' : 'ยังไม่นับ')}</span>`).join('')}</div>` : '';
       return `<div class="entry-wrap"><button class="entry m-${c.k} ${S.item && S.item.code.toUpperCase() === e.code.toUpperCase() ? 'sel' : ''}" style="--lc:${L.color}" data-act="open-entry" data-code="${esc(e.code)}">
         <div class="seq">${seq || '-'}</div>
-        <div class="c"><div class="code">${esc(e.code)}</div><div class="nm">${esc(e.name)}</div>${otherTxt}${c.waitL.length ? `<div class="oth">ยังรอไลน์ ${esc(c.waitL.join(', '))} นับ</div>` : ''}<span class="chip ${c.k}" style="margin-top:6px">${c.t}</span></div>
-        <div class="r nums">
-          <div class="nb"><span class="mut">นับได้</span><b class="cnt">${fmt(e.qty)}</b></div>${multi}
-          <div class="nb"><span class="mut">SimLex</span><b class="sx">${c.nosim ? '0' : fmt(c.sx)}</b>${c.nosim ? '<span class="mut">ไม่มีใน SimLex</span>' : ''}</div>
-          <div class="dbox ${diffCls(c.d)}"><b>${c.d > 0 ? '+' : ''}${fmt(c.d)}</b></div>
-        </div>
+        <div class="c"><div class="code">${esc(e.code)} <span class="chip ${c.k}">${c.t}</span></div><div class="nm">${esc(e.name)}</div>${oth}</div>
+        <div class="ncol"><span class="mut">นับได้</span><b class="cnt">${fmt(e.qty)}</b>${counted.length ? `<span class="tot">รวม ${fmt(e.total)}</span>` : ''}</div>
+        <div class="ncol"><span class="mut">SimLex</span><b class="sx">${c.nosim ? '0' : fmt(c.sx)}</b>${c.nosim ? '<span class="tot">ไม่มีใน SimLex</span>' : ''}</div>
+        <div class="dbox ${diffCls(c.d)}"><b>${c.d > 0 ? '+' : ''}${fmt(c.d)}</b></div>
       </button>${locked || d.round.status !== 'open' ? '' : `<button class="del-x" data-act="ask-del" data-code="${esc(e.code)}" data-qty="${esc(e.qty)}" aria-label="ลบรายการ ${esc(e.code)}" title="ลบรายการนี้">&times;</button>`}</div>`;
     }).join('');
     const n = d.entries.length;
@@ -692,7 +734,7 @@ function startApp() {
         <div class="mtop"><span>นับมา <b class="cnt">${n}</b> รายการ · ตรง <b class="okc">${okN}</b> · ไม่ตรง <b class="badc">${badN}</b></span><span class="pctw"><span class="mut">ตรงกับ SimLex</span><b class="pct">${pct}%</b></span></div>
         <div class="mtrack"><div class="mfill" style="width:${pct}%"></div></div>
         <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
-          <span class="mut">กรอบขวาสุด = ยอดนับรวมทุกไลน์ − SimLex · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</span>
+          <span class="mut">กรอบขวาสุด = ยอดนับ (รวมทุกไลน์) − SimLex · ยอดไลน์อื่นอัปเดตตอนเปิดหน้านี้</span>
           <button class="btn sec sm" data-act="sort-seq">${S.sortSeq ? 'เรียงล่าสุดไว้บน' : 'เรียงตามเลข 1, 2, 3...'}</button>
         </div>
       </div>` : '';
@@ -762,9 +804,9 @@ function startApp() {
     const rows = shown.map((x, i) => `<button class="arow ${x.done ? 'done' : 'todo'}" data-act="all-pick" data-code="${esc(x.code)}">
         <div class="an">${i + 1}</div>
         <div class="c"><div class="code">${esc(x.code)}</div><div class="nm">${esc(x.name)}</div>
-          ${x.others.length ? `<div class="oth">มีที่ไลน์อื่นด้วย: ${x.others.map((o) => esc(o.name) + (o.qty !== null ? ' ' + fmt(o.qty) : ' (ยังไม่นับ)')).join(' · ')}</div>` : ''}</div>
-        <div class="nb"><span class="mut">SimLex</span><b class="sx">${x.simlex === null ? '-' : fmt(x.simlex)}</b></div>
-        <div class="nb st">${x.done ? `<span class="mut">นับแล้ว</span><b class="cnt">${fmt(x.mine)}</b>` : '<b class="todo-t">ยังไม่นับ</b>'}</div>
+          ${x.others.length ? `<div class="oth1">${x.others.map((o) => `<span class="ltag ${o.qty !== null ? 'has' : ''}">${esc(o.name)}${o.qty !== null ? ' ' + fmt(o.qty) : ''}</span>`).join('')}</div>` : ''}</div>
+        <div class="ncol"><span class="mut">SimLex</span><b class="sx">${x.simlex === null ? '-' : fmt(x.simlex)}</b></div>
+        <div class="ncol st">${x.done ? `<span class="mut">นับแล้ว</span><b class="cnt">${fmt(x.mine)}</b>` : '<b class="todo-t">ยังไม่นับ</b>'}</div>
       </button>`).join('');
     return header('ของที่มีในไลน์ - ' + L.name, true, L.color) + `<div class="wrap">
       <div class="mbar">
@@ -777,25 +819,73 @@ function startApp() {
             <button class="btn sm ${f === 'todo' ? '' : 'sec'}" data-act="all-filter" data-f="todo">ยังไม่นับ (${todo})</button>
             <button class="btn sm ${f === 'done' ? '' : 'sec'}" data-act="all-filter" data-f="done">นับแล้ว (${done})</button>
           </div>
-          <button class="btn sm" style="background:#1E7B3C" data-act="all-excel">ดาวน์โหลด Excel</button>
+          <div class="row" style="gap:8px"><button class="btn sm sec" data-act="print">พิมพ์</button><button class="btn sm" style="background:#1E7B3C" data-act="all-excel">ดาวน์โหลด Excel</button></div>
         </div>
         <div class="mut" style="margin-top:6px">แสดง Item ในรายการ BOM ของไลน์นี้ที่ยอด SimLex ไม่เป็น 0 (ยอดติดลบแสดงด้วย) และที่นับไว้แล้ว · กดรายการเพื่อไปนับ</div>
       </div>
-      <div class="alist">${rows || '<div class="card muted">ไม่มีรายการ</div>'}</div>
+      <div class="alist noprint">${rows || '<div class="card muted">ไม่มีรายการ</div>'}</div>
+      <div class="ptable">
+        <h2>ใบเช็คของในไลน์ ${esc(L.name)} · รอบ ${esc((S.meta && S.meta.round && S.meta.round.label) || '')} · ${f === 'todo' ? 'เฉพาะยังไม่นับ' : f === 'done' ? 'เฉพาะนับแล้ว' : 'ทั้งหมด'} ${shown.length} รายการ</h2>
+        <table><thead><tr><th>#</th><th>Item</th><th>ชื่อ</th><th class="n">SimLex</th><th class="n">นับได้</th><th>จดยอดนับ</th><th>ไลน์อื่น</th></tr></thead>
+        <tbody>${shown.map((x, i) => `<tr><td>${i + 1}</td><td><b>${esc(x.code)}</b></td><td>${esc(x.name)}</td><td class="n">${x.simlex === null ? '-' : fmt(x.simlex)}</td><td class="n">${x.done ? fmt(x.mine) : ''}</td><td></td><td>${esc(x.others.map((o) => o.name).join(', '))}</td></tr>`).join('')}</tbody></table>
+        <p>พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))} · ผู้นับ ______________ · ผู้ตรวจ ______________</p>
+      </div>
     </div>`;
+  }
+  function loadStyleXlsx() {
+    if (window.__XLSX_STYLE__) return Promise.resolve();
+    return new Promise((ok, bad) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+      sc.onload = () => { window.__XLSX_STYLE__ = true; ok(); };
+      sc.onerror = () => bad(new Error('โหลดตัวสร้าง Excel ไม่ได้ (เช็คเน็ต)'));
+      document.head.appendChild(sc);
+    });
   }
   async function exportLineAll() {
     try {
-      await H.xlsx();
-      const L = lineOf(S.line), list = lineAll(S.line);
-      const aoa = [['ลำดับ', 'Item', 'ชื่อ', 'Model', 'Process', 'ยอด SimLex', 'นับได้ (' + L.name + ')', 'สถานะ', 'ไลน์อื่นที่มี Item นี้']];
-      list.forEach((x, i) => aoa.push([i + 1, x.code, x.name, x.model, x.process, x.simlex === null ? '' : x.simlex, x.done ? x.mine : '', x.done ? 'นับแล้ว' : 'ยังไม่นับ',
-        x.others.map((o) => o.name + (o.qty !== null ? ' ' + o.qty : ' (ยังไม่นับ)')).join(', ')]));
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = [{ wch: 6 }, { wch: 24 }, { wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 11 }, { wch: 14 }, { wch: 10 }, { wch: 30 }];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'ของในไลน์');
+      await loadStyleXlsx();
+      const L = lineOf(S.line), all = lineAll(S.line);
+      const f = S.allFilter || 'all';
+      const list = all.filter((x) => f === 'all' || (f === 'todo' ? !x.done : x.done));
       const round = (S.meta && S.meta.round && S.meta.round.label) || '';
+      const r3n = (v) => (v === null || v === undefined ? '' : Math.round(Number(v) * 1000) / 1000);
+      const head = ['ลำดับ', 'Item', 'ชื่อ', 'Model', 'Process', 'ยอด SimLex', 'นับได้', 'ผลต่าง', 'สถานะ', 'จดยอดนับ', 'ไลน์อื่นที่มี'];
+      const aoa = [['ของที่มีในไลน์ ' + L.name + '  ·  รอบ ' + round], ['ทั้งหมด ' + list.length + ' รายการ  ·  นับแล้ว ' + list.filter((x) => x.done).length + '  ·  ยังไม่นับ ' + list.filter((x) => !x.done).length + '  ·  สร้างเมื่อ ' + new Date().toLocaleString('th-TH')], [], head];
+      list.forEach((x, i) => aoa.push([i + 1, x.code, x.name, x.model, x.process, r3n(x.simlex), x.done ? r3n(x.mine) : '', x.done && x.simlex !== null ? r3n(x.mine - x.simlex) : '', x.done ? 'นับแล้ว' : 'ยังไม่นับ', '', x.others.map((o) => o.name).join(', ')]));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const thin = { style: 'thin', color: { rgb: 'B8C2CF' } };
+      const box = { top: thin, bottom: thin, left: thin, right: thin };
+      const font = { name: 'Tahoma', sz: 11 };
+      const HR = 3;
+      for (let r = 0; r < aoa.length; r++) for (let c = 0; c < head.length; c++) {
+        const ref = XLSX.utils.encode_cell({ r, c });
+        if (!ws[ref]) { if (r < HR) continue; ws[ref] = { t: 's', v: '' }; }
+        const cell = ws[ref];
+        if (r === 0) { cell.s = { font: { name: 'Tahoma', sz: 16, bold: true, color: { rgb: '17406F' } } }; continue; }
+        if (r === 1) { cell.s = { font: { name: 'Tahoma', sz: 11, color: { rgb: '4A5565' } } }; continue; }
+        if (r === HR) { cell.s = { font: { name: 'Tahoma', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '17406F' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: box }; continue; }
+        const x = list[r - HR - 1];
+        const zebra = (r - HR) % 2 === 0 ? 'F4F6F9' : 'FFFFFF';
+        const st = { font, border: box, fill: { fgColor: { rgb: zebra } }, alignment: { vertical: 'center' } };
+        if (c === 0) st.alignment.horizontal = 'center';
+        if (c === 1) st.font = Object.assign({}, font, { bold: true });
+        if (c >= 5 && c <= 7) { st.numFmt = '#,##0.###;[Red]-#,##0.###;0'; st.alignment.horizontal = 'right'; }
+        if (c === 6 && x.done) st.font = Object.assign({}, font, { bold: true, color: { rgb: '1F5FA6' } });
+        if (c === 7 && cell.v !== '') st.font = Object.assign({}, font, { bold: true, color: { rgb: cell.v > 0 ? '1E7B3C' : cell.v < 0 ? 'C62828' : '111111' } });
+        if (c === 8) { st.alignment.horizontal = 'center'; st.font = Object.assign({}, font, { bold: true, color: { rgb: x.done ? '1F5FA6' : 'C25E00' } }); st.fill = { fgColor: { rgb: x.done ? 'E3EEFB' : 'FFEBD3' } }; }
+        if (c === 9) st.fill = { fgColor: { rgb: 'FFFFFF' } };
+        if (c === 10) st.font = Object.assign({}, font, { sz: 10, color: { rgb: '4A5565' } });
+        cell.s = st;
+      }
+      ws['!cols'] = [{ wch: 7 }, { wch: 24 }, { wch: 32 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 11 }, { wch: 10 }, { wch: 11 }, { wch: 13 }, { wch: 24 }];
+      ws['!rows'] = [{ hpt: 26 }, { hpt: 18 }, { hpt: 6 }, { hpt: 24 }];
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } }];
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: HR, c: 0 }, e: { r: aoa.length - 1, c: head.length - 1 } }) };
+      ws['!freeze'] = { xSplit: 0, ySplit: HR + 1 };
+      ws['!views'] = [{ state: 'frozen', ySplit: HR + 1, topLeftCell: 'A' + (HR + 2) }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'ของในไลน์ ' + L.id);
       XLSX.writeFile(wb, 'ของในไลน์_' + L.name + '_' + round + '.xlsx');
       toast('ดาวน์โหลดไฟล์ Excel แล้ว', false);
     } catch (e) { toast('สร้างไฟล์ Excel ไม่สำเร็จ: ' + e.message, true); }
