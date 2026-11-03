@@ -279,6 +279,13 @@ table.t td.n,table.t th.n{text-align:right}
   #pall .tcover td,#pall .tcover th{height:30px}
   #pall .badc{color:#C62828}
 }
+/* v9: เบาะแสจาก RE&IS */
+.hint{padding:4px 8px;border-radius:6px;margin:2px 0;background:#F2F5F9;line-height:1.35}
+.hint.h-pair{background:#FDECEC;border-left:4px solid #C62828}
+.hint.h-time{background:#FFF4D6;border-left:4px solid #C25E00}
+.hint.h-sib{background:#EEF2FB;border-left:4px solid #17406F}
+.hint.h-none{background:#F2F2F2;border-left:4px solid #888}
+@media print{ .pbad td.phint{font-size:9px;color:#333} }
 
 </style>
 </head>
@@ -1512,6 +1519,87 @@ function startPc() {
     const n = items.length, ok = n - bad.length, exact = items.filter((x) => x.exact).length;
     return { notCountedList, items, bad, lines, n, ok, pct: n ? Math.round(ok * 1000 / n) / 10 : null, exact, exactPct: n ? Math.round(exact * 1000 / n) / 10 : null, pm1: ok - exact, tol, multi, notCounted, lname };
   }
+  // ---------- เบาะแสจากไฟล์ RE&IS (ประวัติรับ-จ่ายจาก SimLex) ----------
+  // เวลาเก็บเป็นเลขวันแบบ Excel (เวลาตามนาฬิกาในไฟล์) ไม่ต้องแปลงโซนเวลา
+  const RKEY = 'wipReis';
+  S.reis = null; try { S.reis = JSON.parse(localStorage.getItem(RKEY) || 'null'); } catch (_) {}
+  const serialToStr = (v) => { const d = new Date(Math.round((v - 25569) * 86400000)); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`; };
+  const serialToInput = (v) => new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 16);
+  const inputToSerial = (t) => Date.parse(t + ':00Z') / 86400000 + 25569;
+  function toSerial(v) {
+    if (typeof v === 'number') return v;
+    if (v instanceof Date) return v.getTime() / 86400000 + 25569;
+    const m = String(v || '').match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) / 86400000 + 25569 : null;
+  }
+  async function loadReis(file) {
+    say('กำลังอ่านไฟล์ RE&IS...');
+    try {
+      const wb = await H.readWorkbook(file);
+      const rows = wb.rowsOf(wb.names[0]);
+      const h = rows[0].map((x) => String(x || '').trim());
+      const c = (name) => h.indexOf(name);
+      const ci = { item: c('Item'), date: c('Receive / Issue Date'), qty: c('Receive / Issue Quantity'), loc: c('Location'), code: c('Receive / Issue Code'), no: c('Receive / Issue No.') };
+      if (ci.item < 0 || ci.date < 0 || ci.qty < 0) throw new Error('ไฟล์นี้ไม่ใช่ RE&IS (ไม่พบคอลัมน์ Item / Receive / Issue Date / Receive / Issue Quantity)');
+      const out = [];
+      rows.slice(1).forEach((r) => {
+        if (!r || !r[ci.item]) return;
+        if (ci.loc >= 0 && String(r[ci.loc] || '').trim() !== 'PD2') return;
+        const t = toSerial(r[ci.date]); if (t === null) return;
+        out.push([String(r[ci.item]).trim(), t, String(r[ci.code] || ''), Number(r[ci.qty]) || 0, String(r[ci.no] || '')]);
+      });
+      if (!out.length) throw new Error('ไม่พบรายการของคลัง PD2 ในไฟล์');
+      const last = Math.max(...out.map((r) => r[1])), day = Math.floor(last);
+      S.reis = { name: file.name, rows: out, count: day + 8 / 24, sim: day + 8.5 / 24, first: Math.min(...out.map((r) => r[1])), last };
+      try { localStorage.setItem(RKEY, JSON.stringify(S.reis)); } catch (_) {}
+      say('อ่านไฟล์ RE&IS แล้ว: รับ-จ่ายของ PD2 ' + out.length + ' รายการ');
+    } catch (e) { say(e.message, 'err'); }
+  }
+  function reisIndex() {
+    const R = S.reis; if (!R) return null;
+    if (R._idx) return R._idx;
+    const by = {}; R.rows.forEach((r) => { (by[r[0].toUpperCase()] = by[r[0].toUpperCase()] || []).push(r); });
+    Object.values(by).forEach((a) => a.sort((x, y) => x[1] - y[1]));
+    Object.defineProperty(R, '_idx', { value: by, enumerable: false, writable: true });
+    return by;
+  }
+  const sgnF = (x) => (x > 0 ? '+' : '') + fmt(x);
+  // เบาะแสของ Item ที่ไม่ตรง: [{t: 'time'|'pair'|'sib'|'none', text, short}]
+  function hintsOf(x, P) {
+    const out = [];
+    const by = reisIndex();
+    if (by) {
+      const mv = by[x.k] || [];
+      const win = mv.filter((r) => r[1] >= S.reis.count && r[1] <= S.reis.sim);
+      if (win.length) {
+        const sum = Math.round(win.reduce((a, r) => a + r[3], 0) * 1000) / 1000;
+        out.push({ t: 'time', short: `⏱ ${sgnF(sum)} ระหว่างนับ`, text: `มีรับ-จ่ายระหว่างเวลานับกับเวลาดึง SimLex: ${win.map((r) => `${r[2]} ${sgnF(r[3])} (${serialToStr(r[1]).slice(6)})`).join(', ')} · ถ้าของเคลื่อนก่อนนับ ส่วนต่างคือ ${sgnF(x.d)} · ถ้าเคลื่อนหลังนับ ส่วนต่างจริงคือ ${sgnF(Math.round((x.d + sum) * 1000) / 1000)}` });
+      }
+      if (!mv.length) out.push({ t: 'none', short: 'ไม่มีรับ-จ่ายทั้งเดือน', text: 'ไม่มีรับ-จ่ายของ PD2 ทั้งเดือน (ตามไฟล์ RE&IS) ยอด SimLex อาจค้างมาจากเดือนก่อน ควรนับซ้ำ' });
+    }
+    const base = (k) => k.replace(/-[^-]+$/, '');
+    P.bad.forEach((y) => {
+      if (y === x) return;
+      const sib = base(y.k) === base(x.k) || y.k.startsWith(x.k + '-') || x.k.startsWith(y.k + '-');
+      if (!sib || Math.sign(y.d) === Math.sign(x.d)) return;
+      if (Math.abs(x.d + y.d) <= Math.max(1, Math.abs(x.d) * 0.05)) out.unshift({ t: 'pair', short: `↔ ${y.code} ${sgnF(y.d)}`, text: `อาจคีย์ผิดรหัส: ${y.code} ต่าง ${sgnF(y.d)} หักล้างกันพอดี ใช้ปุ่ม "เปลี่ยนรหัส" บนแท็บเล็ตแก้ได้` });
+      else out.push({ t: 'sib', short: `รหัสพี่น้อง ${y.code} ${sgnF(y.d)}`, text: `รหัสพี่น้อง ${y.code} ต่าง ${sgnF(y.d)} (คนละทิศ) อาจเป็นของข้ามขั้นตอนที่ยังไม่โอนใน SimLex` });
+    });
+    return out;
+  }
+  function reisCard() {
+    const R = S.reis;
+    return `<div class="card" style="margin-bottom:18px"><div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><h2 style="font-size:20px;margin:0 0 4px">เบาะแสตามหาของ (ไฟล์ RE&IS จาก SimLex)</h2>
+        <p class="muted" style="margin:0">อัปโหลดไฟล์ประวัติรับ-จ่าย (RE&IS) ของเดือนนั้น ระบบจะใส่เบาะแสให้ทุกรายการไม่ตรง · ใช้เฉพาะคลัง PD2 · เก็บไว้ในเครื่องนี้ ไม่ขึ้นเซิร์ฟเวอร์</p></div>
+        <label class="btn sec sm" style="cursor:pointer">${R ? 'เปลี่ยนไฟล์' : 'เลือกไฟล์ RE&IS'}<input id="reisfile" type="file" accept=".xlsx" style="display:none"></label></div>
+      ${R ? `<div class="row" style="gap:14px;margin-top:10px;align-items:center;font-size:15px"><span>📄 <b>${esc(R.name)}</b> · PD2 ${R.rows.length} รายการ · ${serialToStr(R.first)} – ${serialToStr(R.last)}</span>
+        <label>เวลานับ <input id="reis-count" type="datetime-local" value="${serialToInput(R.count)}" style="width:auto;min-height:40px"></label>
+        <label>เวลาดึง SimLex <input id="reis-sim" type="datetime-local" value="${serialToInput(R.sim)}" style="width:auto;min-height:40px"></label>
+        <button class="btn ghost sm" style="color:#8F1D12" data-act="reis-clear">ล้างไฟล์</button></div>` : ''}
+    </div>`;
+  }
+
   function viewPre() {
     const P = S.pre;
     if (S.roundId && S.meta && Number(S.roundId) !== S.meta.round.id) return '<div class="banner warn">หน้านี้ดูได้เฉพาะรอบปัจจุบัน เลือกรอบ ' + esc(S.meta.round.label) + ' ที่มุมขวาบน</div>';
@@ -1533,12 +1621,13 @@ function startPc() {
         <tr style="background:#F2F5F9"><td><b>รวม (Item ไม่ซ้ำ)</b></td><td class="n"><b>${P.n}</b></td><td class="n" style="color:#1E7B3C"><b>${P.ok}</b></td><td class="n" style="color:#C62828"><b>${P.bad.length}</b></td><td class="n"><b>${P.pct === null ? '-' : P.pct + '%'}</b></td><td colspan="2"></td></tr>
         </tbody></table></div>
         <p class="muted" style="margin-bottom:0;font-size:15px">ผลรวมของแต่ละไลน์บวกกันจะมากกว่าแถว "รวม" เพราะ Item ที่อยู่หลายไลน์ถูกนับในทุกไลน์ที่เกี่ยวข้อง แต่ในแถวรวมนับเป็น 1</p></div>
+      ${reisCard()}
       <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="font-size:20px;margin:0">รายการไม่ตรง ${bad.length} Item (เรียงส่วนต่างมากไปน้อย)</h2>
         <select id="preline" style="max-width:240px"><option value="">ทุกไลน์</option>${P.lines.map((l) => `<option value="${l.L.id}" ${f === l.L.id ? 'selected' : ''}>${esc(l.L.name)}</option>`).join('')}</select></div>
-        <div class="scroll-x"><table class="t"><thead><tr><th>Item</th><th>Process</th><th>นับได้แยกไลน์</th><th class="n">รวม</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th></th></tr></thead><tbody>
+        <div class="scroll-x"><table class="t"><thead><tr><th>Item</th><th>Process</th><th>นับได้แยกไลน์</th><th class="n">รวม</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th>เบาะแส</th><th></th></tr></thead><tbody>
         ${bad.map((x) => `<tr><td><b>${esc(x.code)}</b><br><span class="muted" style="font-size:14px">${esc(x.name)}</span></td><td style="font-size:14px">${esc(x.process)}</td>
           <td style="font-size:14px">${x.lines.map((l) => esc(P.lname(l)) + ' <b>' + fmt(x.per[l]) + '</b>').join('<br>')}</td><td class="n">${fmt(x.total)}</td><td class="n">${x.simlex === null ? '0 <span class="muted" style="font-size:13px">(ไม่มี)</span>' : fmt(x.simlex)}</td>
-          <td class="n"><b style="color:${x.d > 0 ? '#1E7B3C' : '#C62828'}">${fmtDiff(x.d)}</b></td><td><button class="btn sec sm" data-trace="${esc(x.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการไม่ตรง</td></tr>'}</tbody></table></div></div>
+          <td class="n"><b style="color:${x.d > 0 ? '#1E7B3C' : '#C62828'}">${fmtDiff(x.d)}</b></td><td style="font-size:13.5px;max-width:340px">${hintsOf(x, P).map((h) => `<div class="hint h-${h.t}">${esc(h.text)}</div>`).join('') || (S.reis ? '<span class="muted">-</span>' : '<span class="muted">อัปโหลด RE&IS เพื่อดูเบาะแส</span>')}</td><td><button class="btn sec sm" data-trace="${esc(x.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">ไม่มีรายการไม่ตรง</td></tr>'}</tbody></table></div></div>
       <div class="card" id="notcounted" style="margin-top:18px;scroll-margin-top:12px"><div class="row" style="justify-content:space-between;margin-bottom:4px"><h2 style="font-size:20px;margin:0">SimLex มีของ แต่ยังไม่มีใครนับ ${P.notCounted} รายการ</h2>
         <button class="btn sec sm" data-act="print-notcounted">พิมพ์รายการนี้</button></div>
         <p class="muted" style="margin:0 0 8px">ยอดใน SimLex ไม่เป็น 0 แต่ไม่มีไลน์ไหนคีย์ยอดนับ · เรียงจากยอดมากไปน้อย · ช่อง "ไลน์ใน BOM" = ไลน์ที่ควรมีของตัวนี้ (ว่าง = ไม่อยู่ใน BOM) · ติดลบ = SimLex ผิด ต้องปรับยอด</p>
@@ -1560,7 +1649,7 @@ function startPc() {
       <table class="tbad"><colgroup><col style="width:3%"><col style="width:4.5%"><col style="width:15%"><col style="width:15%"><col style="width:9%"><col style="width:6.5%"><col style="width:11%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:7%"><col style="width:9.5%"></colgroup>
       <thead><tr><th>#</th><th class="n">นับที่</th><th>Item</th><th>ชื่อ</th><th>Process</th><th class="n">ไลน์นี้</th><th>+ ไลน์อื่น</th><th class="n">รวม</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th>นับใหม่</th><th>สาเหตุ</th></tr></thead>
       <tbody>${bad.map((r, i) => `<tr><td>${i + 1}</td><td class="n">${r.seq}</td><td><b>${esc(r.x.code)}</b></td><td>${esc(r.x.name)}</td><td>${esc(r.x.process)}</td><td class="n"><b>${fmt(r.mine)}</b></td>
-        <td class="oth">${r.others.filter((o) => Number(o.qty) !== 0).map((o) => `${esc(o.name)} <b>${fmt(o.qty)}</b>`).join(' · ') || '<span class="mut">-</span>'}</td><td class="n">${fmt(r.x.total)}</td><td class="n">${fmt(r.x.sx)}</td><td class="n d ${cls(r.x.d)}"><b>${sgn(r.x.d)}</b></td><td></td><td></td></tr>`).join('')}</tbody></table>
+        <td class="oth">${r.others.filter((o) => Number(o.qty) !== 0).map((o) => `${esc(o.name)} <b>${fmt(o.qty)}</b>`).join(' · ') || '<span class="mut">-</span>'}</td><td class="n">${fmt(r.x.total)}</td><td class="n">${fmt(r.x.sx)}</td><td class="n d ${cls(r.x.d)}"><b>${sgn(r.x.d)}</b></td><td></td><td class="phint">${esc(hintsOf(r.x, P).map((h) => h.short).join(' · '))}</td></tr>`).join('')}</tbody></table>
       <p class="pfoot">ผู้นับใหม่ ________________ &nbsp;·&nbsp; ผู้ตรวจ ________________ &nbsp;·&nbsp; แก้ยอดในเว็บแล้วให้หัวหน้าไลน์กดส่งยอด</p></div>`;
   }
   function printNotCounted() {
@@ -1773,6 +1862,8 @@ function startPc() {
       <table class="t"><thead><tr><th>ไลน์</th><th class="n">นับได้</th><th>ส่งยอด</th></tr></thead><tbody>
       ${t.lines.map((l) => `<tr><td>${esc(l.name)}</td><td class="n">${l.qty === null ? 'ไม่ได้นับ' : fmt(l.qty)}</td><td>${l.submitted_at ? thTime(l.submitted_at) : '<b>ยังไม่ส่ง</b>'}</td></tr>`).join('')}</tbody></table>
       ${t.prev ? `<h3 style="margin:14px 0 6px">รอบก่อน (${esc(t.prev.label)})</h3><div>${t.prev.counts.length ? t.prev.counts.map((c) => esc(c.lineName) + ' ' + fmt(c.qty)).join(' · ') : 'ไม่มีข้อมูลนับของ Item นี้'}</div>` : ''}
+      ${(() => { const by = reisIndex(); if (!by) return ''; const mv = (by[String(r.code).toUpperCase()] || []).slice().reverse();
+        return `<h3 style="margin:14px 0 6px">รับ-จ่ายใน SimLex เดือนนี้ (RE&IS · PD2)</h3><table class="t"><thead><tr><th>เวลา</th><th>ประเภท</th><th class="n">จำนวน</th><th>เลขที่</th></tr></thead><tbody>${mv.slice(0, 40).map((m) => `<tr${m[1] >= S.reis.count && m[1] <= S.reis.sim ? ' style="background:#FFF4D6"' : ''}><td>${serialToStr(m[1])}</td><td>${esc(m[2])}</td><td class="n"><b style="color:${m[3] < 0 ? '#C62828' : '#1E7B3C'}">${sgnF(m[3])}</b></td><td style="font-size:13px">${esc(m[4])}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">ไม่มีรับ-จ่ายทั้งเดือน</td></tr>'}</tbody></table>${mv.length > 40 ? '<div class="muted">แสดง 40 รายการล่าสุด</div>' : ''}`; })()}
       <h3 style="margin:14px 0 6px">ประวัติการคีย์ Item นี้</h3>
       <table class="t"><thead><tr><th>เวลา</th><th>ไลน์</th><th>การกระทำ</th><th class="n">เดิม</th><th class="n">ใหม่</th><th>ผู้นับ</th></tr></thead><tbody>
       ${t.history.map((h) => `<tr><td>${thTime(h.at)}</td><td>${esc(h.lineName)}</td><td>${esc(ACTION[h.action] || h.action)}</td><td class="n">${fmt(h.old_qty)}</td><td class="n">${fmt(h.new_qty)}</td><td>${esc(h.counted_by || '')}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">ไม่มีประวัติ</td></tr>'}</tbody></table>
@@ -1841,6 +1932,7 @@ function startPc() {
     else if (act === 'print-all-bad') printBad('');
     else if (act === 'export-total') exportTotal();
     else if (act === 'print-notcounted') printNotCounted();
+    else if (act === 'reis-clear') { S.reis = null; try { localStorage.removeItem(RKEY); } catch (_) {} render(); }
     else if (act === 'print-line-bad') printBad(b.dataset.line);
     else if (act === 'export-mk') exportFile('mk');
     else if (act === 'export-adjust') exportFile('adjust');
@@ -1852,7 +1944,9 @@ function startPc() {
       try { await api('/api/admin/round', { method: 'POST', body: JSON.stringify({ label: $('#rlabel').value }) }); S.roundId = ''; say('เปิดรอบใหม่แล้ว อย่าลืมอัปโหลด STOCK PD2 ใหม่'); load(); } catch (e) { say(e.message, 'err'); }
     }
   });
-  document.addEventListener('change', (ev) => { if (ev.target.id === 'round') { S.roundId = ev.target.value; load(); } if (ev.target.id === 'preline') { S.preLine = ev.target.value; render(); } if (ev.target.id === 'repdate') { S.repDate = ev.target.value; render(); } });
+  document.addEventListener('change', (ev) => { if (ev.target.id === 'round') { S.roundId = ev.target.value; load(); } if (ev.target.id === 'preline') { S.preLine = ev.target.value; render(); } if (ev.target.id === 'repdate') { S.repDate = ev.target.value; render(); }
+    if (ev.target.id === 'reisfile' && ev.target.files[0]) { loadReis(ev.target.files[0]).then(render); }
+    if ((ev.target.id === 'reis-count' || ev.target.id === 'reis-sim') && S.reis && ev.target.value) { S.reis[ev.target.id === 'reis-count' ? 'count' : 'sim'] = inputToSerial(ev.target.value); try { localStorage.setItem(RKEY, JSON.stringify(S.reis)); } catch (_) {} render(); } });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'q') { S.q = ev.target.value; S.status = $('#st').value; load(); } });
 
   load();
