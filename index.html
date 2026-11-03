@@ -1833,7 +1833,7 @@ function startPc() {
     const P = S.pre, bal = P.items.filter((x) => !okXl(x.d)).length;
     return `<div class="card" style="margin-bottom:18px"><div class="row" style="justify-content:space-between;align-items:flex-end">
         <div><h2 style="font-size:20px;margin:0 0 4px">รายงานประจำเดือน TOTAL STOCK PD2 (Excel)</h2>
-        <p class="muted" style="margin:0">ไฟล์ Excel 4 ชีต: สรุปผู้บริหาร · รายเดือนแยกยอดรายไลน์ · รายการไม่ตรง (มีเบาะแสถ้าโหลด RE&IS ไว้) · SimLex มีของแต่ไม่ได้นับ · Item ซ้ำหลายไลน์รวมเป็น 1 แถว · ต่าง ±1 นับว่าตรง (เหมือนไฟล์เดิม)</p></div>
+        <p class="muted" style="margin:0">ไฟล์ Excel 3 ชีต: สรุปผู้บริหาร (มีแนวโน้ม 12 เดือน) · รายเดือนแยกยอดรายไลน์ (กรองสถานะ = ไม่ตรง ได้) · SimLex มีของแต่ไม่ได้นับ · Item ซ้ำหลายไลน์รวมเป็น 1 แถว · ต่าง ±1 นับว่าตรง (เหมือนไฟล์เดิม)</p></div>
         <div class="row" style="gap:8px"><label class="muted" for="repdate">วันที่ (ชื่อชีต)</label><input id="repdate" type="date" value="${reportDate()}" style="width:auto;min-height:44px">
         <button class="btn" style="background:#1E7B3C" data-act="export-total">ดาวน์โหลด TOTAL STOCK PD2 (.xlsx)</button></div></div>
         <div class="grid g4" style="margin-top:14px">
@@ -1957,34 +1957,33 @@ function startPc() {
       sp('B20', { t: 's', v: 'นับขาด (ของจริงน้อยกว่าในระบบ)', s: C() }); sp('C20', { t: 'n', v: under.length, s: C({ alignment: { horizontal: 'center' } }) }); sp('D20', { t: 'n', v: sumAbs(under), z: '+#,##0;-#,##0', s: C({ font: font({ bold: true, color: { rgb: RED } }), alignment: { horizontal: 'center' } }) });
       sp('B18', { t: 's', v: 'ทิศทาง', s: H(NAVY) });
       // ไม่ตรงมากที่สุด 10 อันดับ
-      title('B22', 'ไม่ตรงมากที่สุด 10 อันดับ (รายการทั้งหมดอยู่ชีต "ไม่ตรง")');
-      ['Part No.', 'ไลน์ที่นับ', 'นับได้', 'SimLex', 'ต่าง', S.reis ? 'เบาะแส (จาก RE&IS)' : 'Process'].forEach((h, i) => sp(String.fromCharCode(66 + i) + '23', { t: 's', v: h, s: H(NAVY) }));
+      title('B22', 'ไม่ตรงมากที่สุด 10 อันดับ (ดูทั้งหมด: ชีต ' + name + ' กรองคอลัมน์สถานะ = ไม่ตรง)');
+      ['Part No.', 'ไลน์ที่นับ', 'นับได้', 'SimLex', 'ต่าง', 'Process'].forEach((h, i) => sp(String.fromCharCode(66 + i) + '23', { t: 's', v: h, s: H(NAVY) }));
       const lnm = (x) => Object.keys(x.per).map((id) => lineOf(id).L.name).join(', ');
-      const clue = (x) => { try { return S.reis ? hintsOf(x, P).map((h) => h.short).join(' · ') : (x.process || ''); } catch (_) { return ''; } };
       badL.slice().sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 10).forEach((x, i) => {
         const r = 24 + i;
         sp('B' + r, { t: 's', v: x.code, s: C({ font: font({ bold: true }) }) }); sp('C' + r, { t: 's', v: lnm(x), s: C() });
         sp('D' + r, { t: 'n', v: x.total, z: '#,##0.###', s: C() }); sp('E' + r, { t: 'n', v: x.sx, z: '#,##0.###', s: C() });
         sp('F' + r, { t: 'n', v: x.d, z: '+#,##0.###;-#,##0.###', s: C({ font: font({ bold: true, color: { rgb: x.d > 0 ? GREEN : RED } }), alignment: { horizontal: 'center' } }) });
-        sp('G' + r, { t: 's', v: clue(x), s: C({ alignment: { wrapText: true } }) });
+        sp('G' + r, { t: 's', v: x.process || '', s: C({ alignment: { horizontal: 'center' } }) });
       });
-      sm['!ref'] = 'B2:G33';
+      // แนวโน้ม 12 เดือนล่าสุด (มีที่เดียว)
+      const t12 = tr.slice(-12);
+      title('B35', 'แนวโน้ม % ตรง 12 เดือนล่าสุด');
+      ['เดือน', 'Item', 'ตรง', 'ไม่ตรง', '% ตรง', 'กราฟ (█ = 5%)'].forEach((h, i) => sp(String.fromCharCode(66 + i) + '36', { t: 's', v: h, s: H(NAVY) }));
+      t12.forEach((rw, i) => {
+        const r = 37 + i, now = rw.src === 'now';
+        const st = (o) => C(Object.assign({ alignment: { horizontal: 'center' } }, now ? { fill: { fgColor: { rgb: 'FFF4D6' } }, font: font({ bold: true }) } : {}, o || {}));
+        sp('B' + r, { t: 's', v: rw.label, s: st({ alignment: { horizontal: 'left' } }) });
+        sp('C' + r, now ? { t: 'n', f: `${q}B3`, v: rw.n, s: st() } : { t: 'n', v: rw.n, s: st() });
+        sp('D' + r, now ? { t: 'n', f: `${q}C3`, v: rw.ok, s: st() } : { t: 'n', v: rw.ok, s: st() });
+        sp('E' + r, { t: 'n', f: `C${r}-D${r}`, v: rw.n - rw.ok, s: st({ font: font({ color: { rgb: RED }, bold: now }) }) });
+        sp('F' + r, { t: 'n', f: `IFERROR(D${r}/C${r},0)`, v: rw.ok / rw.n, z: '0.0%', s: st() });
+        sp('G' + r, { t: 's', f: `REPT("█",ROUND(F${r}*20,0))`, v: '█'.repeat(Math.round(rw.ok / rw.n * 20)), s: { font: font({ color: { rgb: now ? AMBER : NAVY } }), border } });
+      });
+      sm['!ref'] = 'B2:G' + (36 + t12.length);
       sm['!cols'] = [{ wch: 2 }, { wch: 30 }, { wch: 22 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 44 }];
       sm['!rows'] = [null, { hpt: 30 }, null, null, { hpt: 30 }, { hpt: 36 }, { hpt: 26 }];
-      // ---------- ชีตไม่ตรง ----------
-      const mw = {}, mp = (a, c) => { mw[a] = c; };
-      ['Part No.', 'Part Name', 'Process'].concat(LN.map((id) => lineOf(id).L.name), ['นับรวม', 'SimLex', 'ต่าง', S.reis ? 'เบาะแส (จาก RE&IS)' : 'หมายเหตุ']).forEach((h, i) => mp(X.utils.encode_cell({ r: 1, c: 1 + i }) , { t: 's', v: h, s: H(NAVY) }));
-      badL.slice().sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).forEach((x, i) => {
-        const r = 2 + i, cell = (c, o) => mp(X.utils.encode_cell({ r, c }), o);
-        cell(1, { t: 's', v: x.code, s: C({ font: font({ bold: true }) }) }); cell(2, { t: 's', v: x.name || '', s: C() }); cell(3, { t: 's', v: x.process || '', s: C({ alignment: { horizontal: 'center' } }) });
-        LN.forEach((id, j) => cell(4 + j, x.per[id] === undefined ? { t: 's', v: '', s: C() } : { t: 'n', v: x.per[id], z: '#,##0.###', s: C() }));
-        cell(9, { t: 'n', v: x.total, z: '#,##0.###', s: C({ font: font({ bold: true }) }) }); cell(10, { t: 'n', v: x.sx, z: '#,##0.###', s: C() });
-        cell(11, { t: 'n', v: x.d, z: '+#,##0.###;-#,##0.###', s: C({ font: font({ bold: true, color: { rgb: x.d > 0 ? GREEN : RED } }), alignment: { horizontal: 'center' } }) });
-        cell(12, { t: 's', v: S.reis ? clue(x) : '', s: C({ alignment: { wrapText: true } }) });
-      });
-      mw['!ref'] = 'B2:M' + (2 + badL.length);
-      mw['!cols'] = [{ wch: 2 }, { wch: 26 }, { wch: 26 }, { wch: 9 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 9 }, { wch: 50 }];
-      mw['!autofilter'] = { ref: 'B2:M' + (2 + badL.length) };
       // ---------- ชีต SimLex มีของแต่ไม่ได้นับ ----------
       const nw = {}, np = (a, c) => { nw[a] = c; };
       ['Part No.', 'Part Name', 'Process', 'ยอด SimLex', 'ไลน์ที่น่าจะมี (จาก BOM)'].forEach((h, i) => np(String.fromCharCode(66 + i) + '2', { t: 's', v: h, s: H(AMBER) }));
@@ -2002,7 +2001,6 @@ function startPc() {
       const wb = X.utils.book_new();
       X.utils.book_append_sheet(wb, sm, 'สรุป');
       X.utils.book_append_sheet(wb, ws, name);
-      X.utils.book_append_sheet(wb, mw, 'ไม่ตรง');
       X.utils.book_append_sheet(wb, nw, 'ไม่ได้นับ');
       X.writeFile(wb, 'TOTAL STOCK PD2 ' + name + '.xlsx');
       say('ดาวน์โหลด TOTAL STOCK PD2 ' + name + ' แล้ว (' + n + ' Item, ตรง ' + Math.round(ok * 1000 / n) / 10 + '%) · 4 ชีต: สรุป / ' + name + ' / ไม่ตรง / ไม่ได้นับ');
