@@ -1418,7 +1418,7 @@ function startPc() {
       if (S.tab === 'overview') S.dash = await api('/api/dashboard' + rq());
       if (S.tab === 'items') S.items = await api('/api/items?q=' + encodeURIComponent(S.q) + '&status=' + S.status + rqa());
       if (S.tab === 'log') S.log = await api('/api/log' + rq());
-      if (S.tab === 'pre' || S.tab === 'trend') { const r = await api('/api/line/CNC?full=1'); S.pre = buildPre(r.master); }
+      if (S.tab === 'pre' || S.tab === 'trend' || S.tab === 'overview') { const r = await api('/api/line/CNC?full=1'); S.pre = buildPre(r.master); }
       if (S.tab === 'trend') S.trendApp = await loadTrendRounds();
     } catch (e) { if (e.message !== 'auth') say(e.message, 'err'); }
     render();
@@ -1444,17 +1444,21 @@ function startPc() {
     if (!m.itemCount) warn.push('ยังไม่ได้นำเข้า BOM (ไปที่แท็บ "นำเข้าไฟล์ / ตั้งค่า")');
     if (!m.stockCount) warn.push('ยังไม่ได้อัปโหลด STOCK PD2 ของรอบนี้ จึงเทียบกับ SimLex ไม่ได้');
     const rq0 = rq();
+    const P = S.pre, cur = !S.roundId || Number(S.roundId) === m.round.id;
+    if (!P || !cur) return `${warn.map((w) => `<div class="banner warn" style="margin-bottom:12px">${esc(w)}</div>`).join('')}<p>${cur ? 'กำลังโหลด...' : 'รอบเก่า: ดูตัวเลขได้ในแท็บ "แนวโน้ม / รายงานเดือน"'}</p>`;
+    const nSub = P.lines.filter((l) => l.submitted).length;
     return `${warn.map((w) => `<div class="banner warn" style="margin-bottom:12px">${esc(w)}</div>`).join('')}
+      <div class="banner info" style="margin-bottom:14px;font-weight:500">% ทุกหน้าคิดแบบเดียวกับไฟล์ TOTAL STOCK PD2: Item ที่นับ (ตัดตัวซ้ำ) ส่วนต่าง 0 หรือ ±1 นับว่าตรง · คำนวณสดจากยอดที่คีย์ ไม่ต้องรอไลน์ส่ง</div>
       <div class="grid g4" style="margin-bottom:18px">
-        <div class="kpi"><div class="k">ตรง (เผื่อ ±${d.tolerance}) สำหรับสรุปผู้บริหาร</div><div class="v" style="color:#14532D">${s.pctTol === null ? '-' : s.pctTol + '%'}</div><div class="muted">${s.ok + s.tol} จาก ${s.finalCount} รายการที่ไลน์ส่งครบแล้ว</div></div>
-        <div class="kpi"><div class="k">ตรงเป๊ะเทียบ SimLex</div><div class="v">${s.pctExact === null ? '-' : s.pctExact + '%'}</div><div class="muted">${s.ok} จาก ${s.finalCount} รายการ</div></div>
-        <div class="kpi"><div class="k">ต้องตามหาและปรับยอด</div><div class="v" style="color:#8F1D12">${s.bad}</div><div class="muted">ผลต่างเกิน ±${d.tolerance} · รอไลน์อื่น ${s.wait}</div></div>
-        <div class="kpi"><div class="k">ไลน์ที่ส่งยอดแล้ว</div><div class="v" style="color:#17406F">${s.linesSubmitted}/5</div><div class="muted">${d.negativeStock ? 'ยอด SimLex ติดลบ ' + d.negativeStock + ' รายการ' : ''}</div></div>
+        <div class="kpi"><div class="k">% ตรงกับ SimLex (รวมทุกไลน์)</div><div class="v" style="color:#14532D">${P.pct === null ? '-' : P.pct + '%'}</div><div class="muted">${P.ok} จาก ${P.n} Item · ตรงเป๊ะ ${P.exactPct === null ? '-' : P.exactPct + '%'}</div></div>
+        <div class="kpi"><div class="k">ไม่ตรง ต้องตามหา</div><div class="v" style="color:#8F1D12">${P.bad.length}</div><div class="muted">Item · ดูรายการในแท็บ "ตรวจก่อนส่ง"</div></div>
+        <div class="kpi"><div class="k">SimLex มีของ แต่ยังไม่มีใครนับ</div><div class="v" style="color:#C25E00">${P.notCounted}</div><div class="muted">ไม่นำมาคิด % · ดูในแท็บ "ตรวจก่อนส่ง"</div></div>
+        <div class="kpi"><div class="k">ไลน์ที่ส่งยอดแล้ว</div><div class="v" style="color:#17406F">${nSub}/${P.lines.length}</div><div class="muted">${d && d.negativeStock ? 'ยอด SimLex ติดลบ ' + d.negativeStock + ' รายการ' : ''}</div></div>
       </div>
       <div class="grid g2" style="margin-bottom:18px;align-items:start">
-        <div class="card"><h2 style="font-size:20px;margin-bottom:12px">% ตรงแยกตามไลน์ (เผื่อ ±${d.tolerance})</h2>
-          ${d.byLine.map((l) => `<div style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><b>${esc(l.name)}</b><span>${l.pct === null ? 'ยังไม่มีข้อมูลเทียบ' : l.pct + '%'} · ${l.submitted_at ? 'ส่งยอดแล้ว ' + thTime(l.submitted_at) : 'ยังไม่ส่ง'} · นับ ${l.counted} รายการ</span></div>
-            <div class="bar"><i style="width:${l.pct || 0}%;background:${l.color}"></i></div></div>`).join('')}
+        <div class="card"><h2 style="font-size:20px;margin-bottom:12px">% ตรงแยกตามไลน์</h2>
+          ${P.lines.map((l) => `<div style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><b>${esc(l.L.name)}</b><span>${l.pct === null ? 'ยังไม่มียอดนับ' : l.pct + '%'} · ${l.submitted ? 'ส่งยอดแล้ว ' + thTime(l.submitted) : 'ยังไม่ส่ง'} · นับ ${l.n} รายการ</span></div>
+            <div class="bar"><i style="width:${l.pct || 0}%;background:${l.L.color}"></i></div></div>`).join('')}
         </div>
         <div class="card"><h2 style="font-size:20px;margin-bottom:8px">ส่งออกไฟล์</h2>
           <p class="muted" style="margin-top:0">ไฟล์สำหรับฝ่ายขาย (MK) คือยอดนับจริงรวมแยกตามไลน์ (ชีต "WIP" ชื่อคงที่ทุกเดือน คอลัมน์ A = Item, B = รวมนับได้ ใช้กับ XLOOKUP ได้ตรงๆ) ส่วนไฟล์ปรับยอดสำหรับ PC นำไปลง SimLex ใช้ผลต่างจริงไม่เผื่อ</p>
@@ -1464,12 +1468,12 @@ function startPc() {
           <p class="muted" style="font-size:15px;margin-bottom:0">ควรดาวน์โหลดหลังทุกไลน์ส่งยอดครบ (ตอนนี้ส่งแล้ว ${s.linesSubmitted}/5 ไลน์)</p>
         </div>
       </div>
-      <div class="card"><h2 style="font-size:20px;margin-bottom:4px">รายการที่ไม่ตรง (เรียงตามผลต่างมากสุด)</h2>
-        <p class="muted" style="margin-top:0">แสดงเฉพาะ Item ที่ทุกไลน์ที่น่าจะมีของส่งยอดครบแล้ว กดดู "ตามรอย" เพื่อดูว่าควรไปตามต่อที่ไลน์ไหน</p>
-        <div class="scroll-x"><table class="t"><thead><tr><th>Item</th><th class="n">SimLex</th><th class="n">นับรวม</th><th class="n">ผลต่าง</th><th>ไลน์ที่เกี่ยวข้อง</th><th></th></tr></thead>
-        <tbody>${d.attention.map((r) => `<tr><td><b>${esc(r.code)}</b><br><span class="muted" style="font-size:14px">${esc(r.name)}</span></td>
-          <td class="n">${fmt(r.simlex)}</td><td class="n">${fmt(r.total)}</td><td class="n"><b style="color:#8F1D12">${fmtDiff(r.diff)}</b></td>
-          <td style="font-size:14px">${r.candNames.map(esc).join(', ')}</td><td><button class="btn sec sm" data-trace="${esc(r.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">ยังไม่มีรายการที่ไม่ตรง (หรือยังมีไลน์ที่ไม่ได้ส่งยอด)</td></tr>'}</tbody></table></div>
+      <div class="card"><h2 style="font-size:20px;margin-bottom:4px">รายการที่ไม่ตรง ${P.bad.length} Item (เรียงตามผลต่างมากสุด 60 ตัวแรก)</h2>
+        <p class="muted" style="margin-top:0">ยอดรวมทุกไลน์เทียบ SimLex · กด "ตามรอย" เพื่อดูว่าควรไปตามต่อที่ไลน์ไหน · รายการทั้งหมดและใบพิมพ์อยู่ในแท็บ "ตรวจก่อนส่ง"</p>
+        <div class="scroll-x"><table class="t"><thead><tr><th>Item</th><th class="n">SimLex</th><th class="n">นับรวม</th><th class="n">ผลต่าง</th><th>นับได้แยกไลน์</th><th></th></tr></thead>
+        <tbody>${P.bad.slice(0, 60).map((x) => `<tr><td><b>${esc(x.code)}</b><br><span class="muted" style="font-size:14px">${esc(x.name)}</span></td>
+          <td class="n">${fmt(x.sx)}</td><td class="n">${fmt(x.total)}</td><td class="n"><b style="color:#8F1D12">${fmtDiff(x.d)}</b></td>
+          <td style="font-size:14px">${x.lines.map((l) => esc(P.lname(l)) + ' ' + fmt(x.per[l])).join(', ')}</td><td><button class="btn sec sm" data-trace="${esc(x.code)}">ตามรอย</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">ไม่มีรายการที่ไม่ตรง</td></tr>'}</tbody></table></div>
       </div>`;
   }
 
@@ -1487,7 +1491,7 @@ function startPc() {
       total = r3(total);
       const sx = st ? st.qty : 0, d = r3(total - sx);
       return { k, code: (it && it.code) || (st && st.code) || k, name: (it && it.name) || (st && st.name) || '', process: it ? it.process : '',
-        per: p, lines: Object.keys(p), total, simlex: st ? st.qty : null, sx, d, ok: d === 0 };
+        per: p, lines: Object.keys(p), total, simlex: st ? st.qty : null, sx, d, ok: d === 0 || Math.abs(d) === 1, exact: d === 0 };
     });
     const byK = {}; items.forEach((x) => { byK[x.k] = x; });
     const tol = Number(m.tolerance) || 0;
@@ -1504,8 +1508,9 @@ function startPc() {
       const okN = rows.filter((r) => r.x.ok).length;
       return { L, rows, n: rows.length, ok: okN, bad: rows.length - okN, pct: rows.length ? Math.round(okN * 1000 / rows.length) / 10 : null, submitted: sub[L.id] || null };
     });
-    const n = items.length, ok = n - bad.length, okTol = items.filter((x) => Math.abs(x.d) <= tol).length;
-    return { notCountedList, items, bad, lines, n, ok, pct: n ? Math.round(ok * 1000 / n) / 10 : null, pctTol: n ? Math.round(okTol * 1000 / n) / 10 : null, tol, multi, notCounted, lname };
+    // % หลักทุกหน้า = แบบไฟล์ TOTAL STOCK PD2: Item ที่นับ (ตัดตัวซ้ำ) ส่วนต่าง 0 หรือ ±1 พอดี นับว่าตรง
+    const n = items.length, ok = n - bad.length, exact = items.filter((x) => x.exact).length;
+    return { notCountedList, items, bad, lines, n, ok, pct: n ? Math.round(ok * 1000 / n) / 10 : null, exact, exactPct: n ? Math.round(exact * 1000 / n) / 10 : null, pm1: ok - exact, tol, multi, notCounted, lname };
   }
   function viewPre() {
     const P = S.pre;
@@ -1513,11 +1518,11 @@ function startPc() {
     if (!P) return '<p>กำลังโหลด...</p>';
     const f = S.preLine || '';
     const bad = f ? P.bad.filter((x) => x.per[f] !== undefined) : P.bad;
-    return `<div class="banner info" style="margin-bottom:14px;font-weight:500">ดูได้ทันทีตั้งแต่ไลน์ยังไม่กดส่งยอด · นับ Item ซ้ำหลายไลน์เป็น 1 รายการ (เอายอดทุกไลน์มารวมก่อนเทียบ SimLex) · ตรง = ส่วนต่าง 0 เท่านั้น</div>
+    return `<div class="banner info" style="margin-bottom:14px;font-weight:500">ดูได้ทันทีตั้งแต่ไลน์ยังไม่กดส่งยอด · นับ Item ซ้ำหลายไลน์เป็น 1 รายการ (เอายอดทุกไลน์มารวมก่อนเทียบ SimLex) · ตรง = ส่วนต่าง 0 หรือต่าง ±1 พอดี (คิดแบบไฟล์ TOTAL STOCK PD2 · ตัวเลขเดียวกับแท็บภาพรวมและแนวโน้ม)</div>
       <div class="grid g4" style="margin-bottom:18px">
-        <div class="kpi"><div class="k">ตรงกับ SimLex (รวมทุกไลน์)</div><div class="v" style="color:#14532D">${P.pct === null ? '-' : P.pct + '%'}</div><div class="muted">${P.ok} จาก ${P.n} Item · ถ้าเผื่อ ±${P.tol} = ${P.pctTol === null ? '-' : P.pctTol + '%'}</div></div>
+        <div class="kpi"><div class="k">ตรงกับ SimLex (รวมทุกไลน์)</div><div class="v" style="color:#14532D">${P.pct === null ? '-' : P.pct + '%'}</div><div class="muted">${P.ok} จาก ${P.n} Item · ตรงเป๊ะ (ต่าง 0) ${P.exactPct === null ? '-' : P.exactPct + '%'}</div></div>
         <div class="kpi"><div class="k">Item ที่นับ (ไม่ซ้ำ)</div><div class="v" style="color:#17406F">${P.n}</div><div class="muted">อยู่หลายไลน์ ${P.multi} Item (นับเป็น 1)</div></div>
-        <div class="kpi"><div class="k">ไม่ตรง ต้องตามหา</div><div class="v" style="color:#C62828">${P.bad.length}</div><div class="muted">Item</div></div>
+        <div class="kpi"><div class="k">ไม่ตรง ต้องตามหา</div><div class="v" style="color:#C62828">${P.bad.length}</div><div class="muted">Item · ต่าง ±1 อีก ${P.pm1} ตัว นับว่าตรง</div></div>
         <a class="kpi" href="#notcounted" style="text-decoration:none;color:inherit"><div class="k">SimLex มีของ แต่ยังไม่มีใครนับ</div><div class="v" style="color:#C25E00">${P.notCounted}</div><div class="muted" style="text-decoration:underline">กดดูรายการ (ด้านล่างสุด)</div></a>
       </div>
       <div class="card" style="margin-bottom:18px"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="font-size:20px;margin:0">แยกตามไลน์ (ยอดรวมทุกไลน์เทียบ SimLex)</h2>
@@ -1551,7 +1556,7 @@ function startPc() {
         <div class="pl"><div class="pt">ใบตรวจรายการไม่ตรง SimLex · รอบ ${esc(S.meta.round.label)}</div><div class="pline">ไลน์ ${esc(L.name)}</div><div class="psub">${esc(L.sub || '')}</div></div>
         <div class="pc"><span>นับมา <b>${l.n}</b> รายการ</span><span>ตรง <b class="okc">${l.ok}</b></span><span>ไม่ตรง <b class="badc">${l.bad}</b></span></div>
         <div class="pr"><div class="ppct">${l.pct === null ? '-' : l.pct}%</div><div class="ppl">ตรงกับ SimLex</div></div></div>
-      <p class="pnote">เรียงจากส่วนต่างมากไปน้อย · รวม = ไลน์นี้ + ไลน์อื่น · ส่วนต่าง = รวม − SimLex · ช่อง "นับใหม่" และ "สาเหตุ" ให้เขียนมือ · PC พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</p>
+      <p class="pnote">เรียงจากส่วนต่างมากไปน้อย · ตรง = ต่าง 0 หรือ ±1 · รวม = ไลน์นี้ + ไลน์อื่น · ส่วนต่าง = รวม − SimLex · ช่อง "นับใหม่" และ "สาเหตุ" ให้เขียนมือ · PC พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</p>
       <table class="tbad"><colgroup><col style="width:3%"><col style="width:4.5%"><col style="width:15%"><col style="width:15%"><col style="width:9%"><col style="width:6.5%"><col style="width:11%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:7%"><col style="width:9.5%"></colgroup>
       <thead><tr><th>#</th><th class="n">นับที่</th><th>Item</th><th>ชื่อ</th><th>Process</th><th class="n">ไลน์นี้</th><th>+ ไลน์อื่น</th><th class="n">รวม</th><th class="n">SimLex</th><th class="n">ส่วนต่าง</th><th>นับใหม่</th><th>สาเหตุ</th></tr></thead>
       <tbody>${bad.map((r, i) => `<tr><td>${i + 1}</td><td class="n">${r.seq}</td><td><b>${esc(r.x.code)}</b></td><td>${esc(r.x.name)}</td><td>${esc(r.x.process)}</td><td class="n"><b>${fmt(r.mine)}</b></td>
@@ -1581,7 +1586,7 @@ function startPc() {
       <table class="tbad tcover"><thead><tr><th>ไลน์</th><th class="n">นับมา</th><th class="n">ตรง</th><th class="n">ไม่ตรง</th><th class="n">% ตรง</th><th>ส่งยอด</th><th>รับใบ (ลงชื่อ)</th></tr></thead><tbody>
       ${P.lines.map((l) => `<tr><td><b style="color:${l.L.color}">${esc(l.L.name)}</b></td><td class="n">${l.n}</td><td class="n">${l.ok}</td><td class="n"><b class="badc">${l.bad}</b></td><td class="n"><b>${l.pct === null ? '-' : l.pct + '%'}</b></td><td>${l.submitted ? 'ส่งแล้ว' : 'ยังไม่ส่ง'}</td><td></td></tr>`).join('')}
       <tr><td><b>รวม (Item ไม่ซ้ำ)</b></td><td class="n"><b>${P.n}</b></td><td class="n"><b>${P.ok}</b></td><td class="n"><b class="badc">${P.bad.length}</b></td><td class="n"><b>${P.pct}%</b></td><td></td><td></td></tr></tbody></table>
-      <p class="pnote">ยอดเผื่อ ±${P.tol} ชิ้น (สำหรับผู้บริหาร) = ${P.pctTol}% · SimLex มีของแต่ยังไม่มีใครนับ ${P.notCounted} รายการ</p></div>`;
+      <p class="pnote">ตรง = ต่าง 0 หรือ ±1 (แบบไฟล์ TOTAL) · ตรงเป๊ะ ${P.exactPct}% · SimLex มีของแต่ยังไม่มีใครนับ ${P.notCounted} รายการ (ไม่นำมาคิด %)</p></div>`;
     let box = document.getElementById('pall'); if (!box) { box = document.createElement('div'); box.id = 'pall'; document.body.appendChild(box); }
     box.innerHTML = cover + ls.map(lineSheet).join('');
     document.body.classList.add('print-bad', 'print-all');
