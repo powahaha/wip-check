@@ -837,8 +837,10 @@ function startApp() {
     let rows = d.entries.map((e, i) => ({ e, c: cmpOf(e), seq: seqOf(e.code), i }));
     if (S.fil === 'bad') rows = rows.filter((r) => r.c.k === 'bad');
     else if (S.fil === 'ok') rows = rows.filter((r) => r.c.k === 'ok');
-    const q = S.q.trim().toUpperCase();
-    if (q) rows = rows.filter((r) => String(r.e.code).toUpperCase().includes(q) || String(r.e.name || '').toUpperCase().includes(q));
+    const q = S.q.trim().toUpperCase().replace(/^#/, '');
+    // พิมพ์แค่ตัวเลข = หาตาม "นับที่" (เลขเดียวกับในใบพิมพ์) ถ้าไม่มีเลขนั้นจึงค้นในรหัส/ชื่อ
+    if (q && /^\d+$/.test(q) && rows.some((r) => r.seq === Number(q))) rows = rows.filter((r) => r.seq === Number(q));
+    else if (q) rows = rows.filter((r) => String(r.e.code).toUpperCase().includes(q) || String(r.e.name || '').toUpperCase().includes(q));
     const num = (x) => (x === null || x === undefined ? 0 : Number(x));
     if (S.sort === 'seq') rows.sort((a, b) => (a.seq || 1e9) - (b.seq || 1e9));
     else if (S.sort === 'qty') rows.sort((a, b) => num(b.e.qty) - num(a.e.qty) || a.i - b.i);
@@ -932,7 +934,7 @@ function startApp() {
         <div class="a-list">
           ${sumBar}
           <div class="lbar">
-            <input id="lsearch" type="search" value="${esc(S.q)}" placeholder="ค้นหาในรายการ (พิมพ์รหัสหรือชื่อ)" aria-label="ค้นหาในรายการ">
+            <input id="lsearch" type="search" value="${esc(S.q)}" placeholder="ค้นหา: เลขนับที่ (เช่น 79) หรือรหัส / ชื่อ" aria-label="ค้นหาในรายการ">
             <select id="sortby" aria-label="เรียงตาม">${Object.keys(SORTS).map((k) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${SORTS[k]}</option>`).join('')}</select>
           </div>
           <div class="lbar"><div id="fbtns" class="fbtns">${filterBtns()}</div><span id="shown" class="mut">${n ? shownText(rows) : ''}</span>${badN ? `<button class="btn sm" style="background:#C62828" data-act="print-bad">พิมพ์ใบไม่ตรง (${badN})</button>` : ''}</div>
@@ -972,6 +974,7 @@ function startApp() {
         ${it.mine !== null ? `<button class="btn sec big" style="flex:0 0 auto" data-act="add" ${locked || S.busy ? 'disabled' : ''}>บวกเพิ่ม</button>` : ''}
       </div>
       <p class="muted" style="margin:10px 0 0;font-size:15px">"บันทึกยอด" = ใช้ตัวเลขนี้แทนยอดเดิม &nbsp;·&nbsp; "บวกเพิ่ม" = เอาไปบวกกับที่นับไว้แล้ว (เช่น เจอของอีกกอง)</p>
+      ${it.mine !== null && !locked ? `<button class="btn sec sm" style="margin-top:12px" data-act="rename">คีย์รหัสผิด? เปลี่ยนรหัส (ย้ายยอด ${fmt(it.mine)} ไปรหัสที่ถูก)</button>` : ''}
     </div>`;
   }
 
@@ -1205,6 +1208,80 @@ function startApp() {
     }
   }
 
+  // ---------- เปลี่ยนรหัส (คีย์รหัสผิด เช่น -2 แทน -3) ----------
+  function renameCandidates(cur) {
+    if (!M) return [];
+    const C = cur.toUpperCase(), base = C.replace(/-[^-]+$/, ''), root = C.split('-').slice(0, 3).join('-');
+    const keys = {}; Object.keys(M.info).forEach((k) => { keys[k] = 1; }); Object.keys(M.stock).forEach((k) => { if (M.stock[k].qty !== 0) keys[k] = 1; });
+    const score = (k) => (k.replace(/-[^-]+$/, '') === base || k.startsWith(C + '-') || C.startsWith(k + '-') ? 0 : k.startsWith(base) ? 1 : 2);
+    return Object.keys(keys).filter((k) => k !== C && (k.startsWith(base) || k.startsWith(root) || C.startsWith(k + '-')))
+      .map((k) => { const it = M.info[k], st = M.stock[k], per = M.counts[k] || {};
+        return { k, code: (it && it.code) || (st && st.code) || k, name: (it && it.name) || (st && st.name) || '', inLine: !!(M.cand[k] && M.cand[k][S.line]), mine: per[S.line], s: score(k) }; })
+      .sort((a, b) => a.s - b.s || (b.inLine - a.inLine) || (a.k < b.k ? -1 : 1)).slice(0, 14);
+  }
+  function modalBox(html) {
+    return new Promise((resolve) => {
+      const ov = document.createElement('div'); ov.className = 'modal-bg';
+      ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="max-width:560px">' + html + '</div>';
+      document.body.appendChild(ov);
+      const done = (v) => { ov.remove(); resolve(v); };
+      ov.addEventListener('click', (e) => { const x = e.target.closest('[data-pick]'); if (x) done(x.dataset.pick); else if (e.target === ov || e.target.closest('[data-x=no]')) done(null); });
+      ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') done(null); if (e.key === 'Enter' && e.target.id === 'rn-in' && e.target.value.trim()) { e.preventDefault(); e.stopPropagation(); done(e.target.value.trim()); } });
+      const inp = ov.querySelector('#rn-in'); if (inp) inp.focus();
+      const ok = ov.querySelector('[data-x=ok]'); if (ok) ok.addEventListener('click', () => { const v = inp && inp.value.trim(); if (v) done(v); });
+    });
+  }
+  async function renameFlow() {
+    const it = S.item; if (!it || it.mine === null) return;
+    const from = it.code, qty = it.mine, L = lineOf(S.line);
+    const cands = renameCandidates(from);
+    const list = cands.map((c) => `<button type="button" class="sugi" data-pick="${esc(c.code)}" style="min-height:52px"><b>${esc(c.code)}</b><span>${esc(c.name)}${c.inLine ? ' · อยู่ในไลน์นี้' : ''}${c.mine !== undefined ? ' · นับไว้แล้ว ' + fmt(c.mine) : ''}</span></button>`).join('');
+    const to = await modalBox(`<h2 style="margin:0 0 4px;font-size:22px">เปลี่ยนรหัส</h2>
+      <p style="margin:0 0 10px">รหัสเดิม <b>${esc(from)}</b> · ยอด <b>${fmt(qty)}</b> · ไลน์ ${esc(L.name)}</p>
+      ${list ? `<div class="muted" style="margin-bottom:4px">รหัสที่ใกล้เคียง (แตะเพื่อเลือก)</div><div class="sug" style="position:static;max-height:46vh;border-width:1px;box-shadow:none">${list}</div>` : '<div class="muted">ไม่พบรหัสใกล้เคียง พิมพ์รหัสที่ถูกด้านล่าง</div>'}
+      <label class="l" for="rn-in" style="margin-top:12px">หรือพิมพ์รหัสที่ถูก</label>
+      <input id="rn-in" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="รหัสที่ถูกต้อง">
+      <div class="row" style="gap:12px;margin-top:14px"><button type="button" class="btn sec big" style="flex:1" data-x="no">ยกเลิก</button><button type="button" class="btn big" style="flex:1" data-x="ok">ใช้รหัสที่พิมพ์</button></div>`);
+    if (!to || to.toUpperCase() === from.toUpperCase()) return;
+    const k = to.toUpperCase(), have = M && M.counts[k] && M.counts[k][S.line] !== undefined ? M.counts[k][S.line] : null;
+    if (M && !M.info[k] && !M.stock[k] && !(await H.confirm('ไม่พบรหัส ' + to + ' ใน BOM และ STOCK PD2 ยืนยันใช้รหัสนี้ใช่ไหม', 'ใช้รหัสนี้'))) return;
+    let mode = 'merge';
+    if (have !== null) {
+      const m = await modalBox(`<h2 style="margin:0 0 8px;font-size:22px">${esc(to)} มียอดในไลน์นี้อยู่แล้ว</h2>
+        <p style="font-size:17px;margin:0 0 14px">ยอดเดิม ${fmt(have)} · ยอดที่จะย้ายมา ${fmt(qty)}</p>
+        <div class="row" style="gap:10px"><button type="button" class="btn big" style="flex:1" data-pick="merge">บวกรวม = ${fmt(r3(have + qty))}</button>
+        <button type="button" class="btn sec big" style="flex:1" data-pick="replace">แทนที่ = ${fmt(qty)}</button></div>
+        <button type="button" class="btn ghost" style="margin-top:10px;width:100%;color:#555" data-x="no">ยกเลิก</button>`);
+      if (!m) return; mode = m;
+    }
+    try {
+      S.busy = true; render();
+      await flushQueue();
+      let done = null;
+      try { done = await api('/api/count/rename', { method: 'POST', body: JSON.stringify({ line: S.line, from, to, mode, name: S.who }) }); }
+      catch (e) {
+        if (!(e.data && e.data.error === 'notfound')) throw e;
+        // เซิร์ฟเวอร์รุ่นเก่ายังไม่มีคำสั่งเปลี่ยนรหัส: ตั้งยอดรหัสใหม่แล้วลบรหัสเดิม
+        await api('/api/count', { method: 'POST', body: JSON.stringify({ line: S.line, code: to, qty: mode === 'replace' || have === null ? qty : r3(have + qty), mode: 'set', name: S.who }) });
+        await api('/api/count?line=' + encodeURIComponent(S.line) + '&code=' + encodeURIComponent(from) + '&name=' + encodeURIComponent(S.who || ''), { method: 'DELETE' });
+      }
+      const newCode = (done && done.to) || to, nk = newCode.toUpperCase(), ok = from.toUpperCase();
+      const val = have === null || mode === 'replace' ? qty : r3(have + qty);
+      if (M) {
+        if (M.counts[ok]) delete M.counts[ok][S.line];
+        (M.counts[nk] = M.counts[nk] || {})[S.line] = val;
+        const o = (M.order[S.line] = M.order[S.line] || []);
+        const iOld = o.indexOf(ok);
+        if (o.indexOf(nk) >= 0) { if (iOld >= 0) o.splice(iOld, 1); } else if (iOld >= 0) o[iOld] = nk; else o.push(nk);
+      }
+      S.lineData.entries = S.lineData.entries.filter((e) => e.code.toUpperCase() !== ok && e.code.toUpperCase() !== nk);
+      if (M) putEntry(localEntry(newCode, val));
+      S.item = null; S.busy = false;
+      toast('เปลี่ยน ' + from + ' → ' + newCode + ' แล้ว (ยอด ' + fmt(val) + ')', false);
+      render();
+    } catch (e) { S.busy = false; render(); toast(e.message, true); }
+  }
+
   // ---------- ลบรายการ (มีหน้าต่างยืนยันก่อน) ----------
   function askDelete(code, qty) {
     const ov = document.createElement('div');
@@ -1253,6 +1330,7 @@ function startApp() {
       const w = $('#who'); if (w) { S.who = w.value.trim().slice(0, 40); try { localStorage.setItem('who', S.who); } catch (_) {} }
       nav('count', b.dataset.line);
     } else if (act === 'ask-del') askDelete(b.dataset.code, b.dataset.qty);
+    else if (act === 'rename') renameFlow();
     else if (act === 'open-entry') lookup(b.dataset.code, true);
     else if (act === 'save') save('set');
     else if (act === 'add') save('add');
@@ -1324,7 +1402,7 @@ function startPc() {
   const thTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' }) : '-');
   const ST = { ok: ['ตรง', 'ok'], tol: ['ต่างเล็กน้อย', 'tol'], bad: ['ไม่ตรง', 'bad'], wait: ['รอไลน์อื่น', 'wait'], nosim: ['ไม่มีใน SimLex', 'wait'] };
   const chip = (s) => `<span class="chip ${(ST[s] || ST.wait)[1]}">${(ST[s] || ST.wait)[0]}</span>`;
-  const ACTION = { set: 'ตั้งยอด', add: 'บวกเพิ่ม', delete: 'ลบรายการ', submit: 'ส่งยอดไลน์', reopen: 'เปิดให้แก้ต่อ' };
+  const ACTION = { set: 'ตั้งยอด', add: 'บวกเพิ่ม', delete: 'ลบรายการ', submit: 'ส่งยอดไลน์', reopen: 'เปิดให้แก้ต่อ', rename: 'เปลี่ยนรหัส' };
 
   const S = { exportInfo: null, tab: 'overview', meta: null, roundId: '', dash: null, items: null, q: '', status: '', log: null, modal: null, msg: null };
 
