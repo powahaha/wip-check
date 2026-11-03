@@ -465,6 +465,52 @@ const H = (() => {
   }
   const confirmBox = (msg, okText, danger) => dialog({ title: 'ยืนยัน', msg, okText: okText || 'ยืนยัน', danger });
 
+
+  // ---------- บัตรคุมสต็อก (Stock card) จากไฟล์ RE&IS ใช้ทั้งหน้า PC และแท็บเล็ตหัวหน้างาน
+  // meta = {count, sim, first, v} เวลาเป็นเลขวันแบบ Excel · moves = [[item, เวลา, REC/ISS, จำนวน, Order No., เลขที่ SR], ...] เรียงตามเวลา
+  const fmtN = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
+  const sgnN = (x) => (x > 0 ? '+' : '') + fmtN(x);
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const serialStr = (v) => { const d = new Date(Math.round((v - 25569) * 86400000)); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`; };
+  // ยอดยกมา = ยอด SimLex ตอนดึง − รับ-จ่ายที่ลงวันที่ไม่เกินเวลาดึง
+  function ledger(meta, moves, simlex) {
+    const mv = (moves || []).slice().sort((a, b) => a[1] - b[1]), sim = Number(simlex) || 0, cut = meta.sim;
+    const inSnap = mv.filter((m) => m[1] <= cut);
+    const open = r3(sim - inSnap.reduce((a, m) => a + m[3], 0));
+    let bal = open, minBal = open, negAt = null;
+    const rows = mv.map((m) => {
+      const after = m[1] > cut;
+      if (!after) { bal = r3(bal + m[3]); if (bal < minBal) minBal = bal; if (bal < 0 && negAt === null) negAt = m[1]; }
+      return { t: m[1], code: m[2], q: m[3], no: meta.v === 2 ? (m[4] || m[5]) : m[4], sr: meta.v === 2 ? m[5] : '', bal: after ? null : bal, after, win: m[1] >= meta.count && m[1] <= cut };
+    });
+    const rec = r3(inSnap.filter((m) => m[3] > 0).reduce((a, m) => a + m[3], 0));
+    const iss = r3(-inSnap.filter((m) => m[3] < 0).reduce((a, m) => a + m[3], 0));
+    return { open, rows, rec, iss, sim, minBal, negAt };
+  }
+  function stockCard(meta, moves, simlex, total, totalLabel) {
+    if (!meta) return '';
+    const L = ledger(meta, moves, simlex);
+    const fq = (v) => (v ? fmtN(v) : '');
+    const flags = [];
+    if (L.open < 0) flags.push(`ยอดยกมาติดลบ (${fmtN(L.open)}) แปลว่ายอดต้นเดือนใน SimLex ผิดตั้งแต่ต้น หรือมีรับเข้าที่ไม่ได้คีย์`);
+    else if (L.negAt !== null) flags.push(`ยอดคงเหลือติดลบตอน ${serialStr(L.negAt)} = จ่ายออกก่อนรับเข้า (คีย์รับไม่ทัน/คีย์จ่ายเกิน)`);
+    const win = L.rows.filter((m) => m.win);
+    if (win.length) { const sum = r3(win.reduce((a, m) => a + m.q, 0)); flags.push(`มีรับ-จ่าย ${sgnN(sum)} ระหว่างเวลานับกับเวลาดึง SimLex (แถวเหลือง) ถ้าของขยับก่อนนับ ไม่ต้องสนใจ · ถ้าขยับหลังนับ ส่วนต่างจริงต้องบวก ${sgnN(sum)} เข้าไป`); }
+    const tot = total === null || total === undefined ? null : Number(total);
+    return `<h3 style="margin:14px 0 6px">บัตรคุมสต็อกเดือนนี้ (RE&IS · PD2)</h3>
+      <div class="grid g4 ledsum"><div><span>ยอดยกมา</span><b>${fmtN(L.open)}</b></div><div><span>รับเข้า</span><b style="color:#1E7B3C">+${fmtN(L.rec)}</b></div><div><span>จ่ายออก</span><b style="color:#C62828">−${fmtN(L.iss)}</b></div><div><span>ยอด SimLex ตอนดึง</span><b>${fmtN(L.sim)}</b></div></div>
+      ${meta.v === 2 ? '' : '<div class="hint h-time" style="margin:6px 0">ไฟล์ RE&IS เป็นแบบเก่า ให้ PC เลือกไฟล์ RE&IS ใหม่อีกครั้ง เพื่อให้แสดงเลข Order No.</div>'}
+      ${flags.map((f) => `<div class="hint ${/ติดลบ/.test(f) ? 'h-pair' : 'h-time'}" style="margin:6px 0">${escH(f)}</div>`).join('')}
+      <div class="ledwrap"><table class="t led"><thead><tr><th>วันที่ เวลา</th><th>Order No.</th><th class="n">รับเข้า</th><th class="n">จ่ายออก</th><th class="n">คงเหลือ</th></tr></thead><tbody>
+      <tr class="lopen"><td colspan="2"><b>ยอดยกมา</b> <span class="muted">(ต้นรอบ ${serialStr(meta.first).slice(0, 5)})</span></td><td></td><td></td><td class="n"><b>${fmtN(L.open)}</b></td></tr>
+      ${L.rows.map((m) => `<tr class="${m.after ? 'lafter' : (m.win ? 'lwin' : '')}"><td>${serialStr(m.t)}</td><td style="font-size:14px" title="${escH(m.sr)}">${escH(m.no)}</td><td class="n" style="color:#1E7B3C">${m.q > 0 ? '+' + fq(m.q) : ''}</td><td class="n" style="color:#C62828">${m.q < 0 ? '−' + fq(-m.q) : ''}</td><td class="n"${m.bal !== null && m.bal < 0 ? ' style="color:#C62828;font-weight:700"' : ''}>${m.after ? '<span class="muted">หลังดึง SimLex</span>' : fmtN(m.bal)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">ไม่มีรับ-จ่ายทั้งเดือน (ยอดค้างจากเดือนก่อน)</td></tr>'}
+      <tr class="lclose"><td colspan="4"><b>ยอด SimLex ตอนดึง</b></td><td class="n"><b>${fmtN(L.sim)}</b></td></tr>
+      ${tot === null ? '' : `<tr class="lclose"><td colspan="4"><b>${escH(totalLabel || 'นับได้จริง')}</b></td><td class="n"><b>${fmtN(tot)}</b></td></tr>
+      <tr class="lclose"><td colspan="4"><b>ส่วนต่าง (นับ − SimLex)</b></td><td class="n"><b style="color:${tot - L.sim < 0 ? '#C62828' : '#1E7B3C'}">${sgnN(r3(tot - L.sim))}</b></td></tr>`}
+      </tbody></table></div>
+      <div class="muted" style="font-size:13px;margin-top:4px">แถวเหลือง = เกิดระหว่างเวลานับกับเวลาดึง SimLex · แถวเทา = หลังดึง SimLex (ไม่รวมในยอด) · ยอดยกมาคิดย้อนจากยอด SimLex = ยอดที่ปรับเข้า SimLex ตอนปิดเดือนที่แล้ว</div>`;
+  }
+
   async function api(path, opt = {}) {
     let res = await rawCall(path, opt);
     if (res.status === 401 && path !== '/api/login') { await askCode(); res = await rawCall(path, opt); }
@@ -513,7 +559,7 @@ const H = (() => {
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   }
 
-  return { base, api, readWorkbook, download, xlsx: loadXlsx, confirm: confirmBox, dialog };
+  return { base, api, readWorkbook, download, xlsx: loadXlsx, confirm: confirmBox, dialog, ledger, stockCard };
 })();
 
 </script>
@@ -985,6 +1031,7 @@ function startApp() {
         ${it.mine !== null ? `<button class="btn sec big" style="flex:0 0 auto" data-act="add" ${locked || S.busy ? 'disabled' : ''}>บวกเพิ่ม</button>` : ''}
       </div>
       <p class="muted" style="margin:10px 0 0;font-size:15px">"บันทึกยอด" = ใช้ตัวเลขนี้แทนยอดเดิม &nbsp;·&nbsp; "บวกเพิ่ม" = เอาไปบวกกับที่นับไว้แล้ว (เช่น เจอของอีกกอง)</p>
+      ${it.known ? `<button class="btn sec sm" style="margin-top:12px;margin-right:8px" data-act="trace">🔍 ตามรอย (รับ-จ่ายใน SimLex เดือนนี้)</button>` : ''}
       ${it.mine !== null && !locked ? `<button class="btn sec sm" style="margin-top:12px" data-act="rename">คีย์รหัสผิด? เปลี่ยนรหัส (ย้ายยอด ${fmt(it.mine)} ไปรหัสที่ถูก)</button>` : ''}
     </div>`;
   }
@@ -1230,10 +1277,10 @@ function startApp() {
         return { k, code: (it && it.code) || (st && st.code) || k, name: (it && it.name) || (st && st.name) || '', inLine: !!(M.cand[k] && M.cand[k][S.line]), mine: per[S.line], s: score(k) }; })
       .sort((a, b) => a.s - b.s || (b.inLine - a.inLine) || (a.k < b.k ? -1 : 1)).slice(0, 14);
   }
-  function modalBox(html) {
+  function modalBox(html, w) {
     return new Promise((resolve) => {
       const ov = document.createElement('div'); ov.className = 'modal-bg';
-      ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="max-width:560px">' + html + '</div>';
+      ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="max-width:' + (w || 560) + 'px">' + html + '</div>';
       document.body.appendChild(ov);
       const done = (v) => { ov.remove(); resolve(v); };
       ov.addEventListener('click', (e) => { const x = e.target.closest('[data-pick]'); if (x) done(x.dataset.pick); else if (e.target === ov || e.target.closest('[data-x=no]')) done(null); });
@@ -1241,6 +1288,22 @@ function startApp() {
       const inp = ov.querySelector('#rn-in'); if (inp) inp.focus();
       const ok = ov.querySelector('[data-x=ok]'); if (ok) ok.addEventListener('click', () => { const v = inp && inp.value.trim(); if (v) done(v); });
     });
+  }
+  // ตามรอย: บัตรคุมสต็อกจากไฟล์ RE&IS ที่ PC อัปโหลดไว้ (ยอดยกมา → รับเข้า/จ่ายออก → ยอด SimLex)
+  async function traceFlow() {
+    const it = S.item; if (!it) return;
+    let r;
+    try { r = await H.api('/api/reis?code=' + encodeURIComponent(it.code)); } catch (e) { toast(e.message, true); return; }
+    const parts = [];
+    if (it.mine !== null) parts.push(lineOf(S.line).name + ' ' + fmt(it.mine));
+    it.others.forEach((o) => { if (o.qty !== null) parts.push(o.name + ' ' + fmt(o.qty)); });
+    const waiting = it.others.filter((o) => o.qty === null && !o.submitted).map((o) => o.name);
+    const total = parts.length ? (it.mine || 0) + it.others.reduce((a, o) => a + (o.qty || 0), 0) : null;
+    const body = r && r.meta
+      ? H.stockCard(r.meta, r.moves, it.simlex, total, 'นับได้รวมทุกไลน์') +
+        (parts.length ? `<div style="margin-top:8px;font-size:15px">นับได้: ${esc(parts.join(' · '))}${waiting.length ? ` <span class="muted">(ยังไม่นับ: ${esc(waiting.join(', '))})</span>` : ''}</div>` : '')
+      : '<div class="banner warn" style="margin-top:12px">PC ยังไม่ได้อัปโหลดไฟล์ RE&IS เดือนนี้ เลยยังตามรอยไม่ได้ (แจ้ง PC ให้เลือกไฟล์ที่แท็บ "ตรวจก่อนส่ง")</div>';
+    await modalBox(`<div class="row" style="align-items:flex-start"><div class="spacer"><div style="font-size:22px;font-weight:700;overflow-wrap:anywhere">${esc(it.code)}</div><div>${esc(it.name || '')}</div></div><button type="button" class="btn sec sm" data-x="no">ปิด</button></div>${body}`, 760);
   }
   async function renameFlow() {
     const it = S.item; if (!it || it.mine === null) return;
@@ -1342,6 +1405,7 @@ function startApp() {
       nav('count', b.dataset.line);
     } else if (act === 'ask-del') askDelete(b.dataset.code, b.dataset.qty);
     else if (act === 'rename') renameFlow();
+    else if (act === 'trace') traceFlow();
     else if (act === 'open-entry') lookup(b.dataset.code, true);
     else if (act === 'save') save('set');
     else if (act === 'add') save('add');
@@ -1430,6 +1494,7 @@ function startPc() {
       if (S.tab === 'items') S.items = await api('/api/items?q=' + encodeURIComponent(S.q) + '&status=' + S.status + rqa());
       if (S.tab === 'log') S.log = await api('/api/log' + rq());
       if (S.tab === 'pre' || S.tab === 'trend' || S.tab === 'overview') { const r = await api('/api/line/CNC?full=1'); S.pre = buildPre(r.master); }
+      if (S.tab === 'pre' && !S.reisPulled) { S.reisPulled = true; await pullReis(); }
       if (S.tab === 'trend') S.trendApp = await loadTrendRounds();
     } catch (e) { if (e.message !== 'auth') say(e.message, 'err'); }
     render();
@@ -1568,42 +1633,22 @@ function startPc() {
     return by;
   }
   const sgnF = (x) => (x > 0 ? '+' : '') + fmt(x);
-  // บัตรคุมสต็อก (Stock card) ของ Item จาก RE&IS: ยอดยกมา → รับเข้า/จ่ายออก ทีละรายการ → ยอด SimLex ตอนดึง
-  // ยอดยกมา = ยอด SimLex ตอนดึง − รับ-จ่ายทั้งหมดที่ลงวันที่ไม่เกินเวลาดึง (ไฟล์ STOCK สะท้อนตามวันที่รับ-จ่าย)
-  function ledger(k, simlex) {
-    const by = reisIndex(); if (!by) return null;
-    const mv = by[k] || [], sim = Number(simlex) || 0, cut = S.reis.sim;
-    const r3 = (v) => Math.round(v * 1000) / 1000;
-    const inSnap = mv.filter((m) => m[1] <= cut);
-    const open = r3(sim - inSnap.reduce((a, m) => a + m[3], 0));
-    let bal = open, minBal = open, negAt = null;
-    const rows = mv.map((m) => {
-      const after = m[1] > cut;
-      if (!after) { bal = r3(bal + m[3]); if (bal < minBal) minBal = bal; if (bal < 0 && negAt === null) negAt = m[1]; }
-      return { t: m[1], code: m[2], q: m[3], no: S.reis.v === 2 ? (m[4] || m[5]) : m[4], sr: S.reis.v === 2 ? m[5] : '', bal: after ? null : bal, after, win: m[1] >= S.reis.count && m[1] <= cut };
-    });
-    const rec = r3(inSnap.filter((m) => m[3] > 0).reduce((a, m) => a + m[3], 0));
-    const iss = r3(-inSnap.filter((m) => m[3] < 0).reduce((a, m) => a + m[3], 0));
-    return { open, rows, rec, iss, sim, minBal, negAt, first: S.reis.first };
+  const ledger = (k, simlex) => { const by = reisIndex(); return by ? H.ledger(S.reis, by[k] || [], simlex) : null; };
+  const ledgerHtml = (r, total) => { const by = reisIndex(); return by ? H.stockCard(S.reis, by[String(r.code).toUpperCase()] || [], r.simlex, total, 'นับได้จริง (ทุกไลน์)') : ''; };
+  // ส่งไฟล์ RE&IS ขึ้นเซิร์ฟเวอร์ ให้แท็บเล็ตหัวหน้างานตามรอยได้ด้วย
+  async function pushReis(full) {
+    const R = S.reis; if (!R) return;
+    const body = { v: R.v || 1, name: R.name, count: R.count, sim: R.sim, first: R.first, last: R.last };
+    if (full) body.rows = R.rows;
+    try { await api('/api/admin/reis', { method: 'POST', body: JSON.stringify(body) }); if (full) say('อ่านไฟล์ RE&IS แล้ว: รับ-จ่ายของ PD2 ' + R.rows.length + ' รายการ · ส่งขึ้นระบบแล้ว หัวหน้างานกด "ตามรอย" บนแท็บเล็ตได้'); }
+    catch (e) { say('อ่านไฟล์แล้ว แต่ส่งขึ้นระบบไม่สำเร็จ (แท็บเล็ตยังตามรอยไม่ได้): ' + e.message, 'err'); }
   }
-  function ledgerHtml(r, total) {
-    const L = ledger(String(r.code).toUpperCase(), r.simlex); if (!L) return '';
-    const fq = (v) => (v ? fmt(v) : '');
-    const flags = [];
-    if (L.open < 0) flags.push(`ยอดยกมาติดลบ (${fmt(L.open)}) แปลว่ายอดต้นเดือนใน SimLex ผิดตั้งแต่ต้น หรือมีรับเข้าที่ไม่ได้คีย์`);
-    else if (L.negAt !== null) flags.push(`ยอดคงเหลือติดลบตอน ${serialToStr(L.negAt)} = จ่ายออกก่อนรับเข้า (คีย์รับไม่ทัน/คีย์จ่ายเกิน)`);
-    return `<h3 style="margin:14px 0 6px">บัตรคุมสต็อกเดือนนี้ (RE&IS · PD2)</h3>
-      <div class="grid g4 ledsum"><div><span>ยอดยกมา</span><b>${fmt(L.open)}</b></div><div><span>รับเข้า</span><b style="color:#1E7B3C">+${fmt(L.rec)}</b></div><div><span>จ่ายออก</span><b style="color:#C62828">−${fmt(L.iss)}</b></div><div><span>ยอด SimLex ตอนดึง</span><b>${fmt(L.sim)}</b></div></div>
-      ${S.reis.v === 2 ? '' : '<div class="hint h-time" style="margin:6px 0">ไฟล์ RE&IS ที่เก็บไว้เป็นแบบเก่า เลือกไฟล์ RE&IS ใหม่อีกครั้ง (แท็บตรวจก่อนส่ง) เพื่อให้แสดงเลข Order No.</div>'}
-      ${flags.map((f) => `<div class="hint h-pair" style="margin:6px 0">${esc(f)}</div>`).join('')}
-      <div class="ledwrap"><table class="t led"><thead><tr><th>วันที่ เวลา</th><th>Order No.</th><th class="n">รับเข้า</th><th class="n">จ่ายออก</th><th class="n">คงเหลือ</th></tr></thead><tbody>
-      <tr class="lopen"><td colspan="2"><b>ยอดยกมา</b> <span class="muted">(ต้นรอบ ${serialToStr(L.first).slice(0, 5)})</span></td><td></td><td></td><td class="n"><b>${fmt(L.open)}</b></td></tr>
-      ${L.rows.map((m) => `<tr class="${m.after ? 'lafter' : (m.win ? 'lwin' : '')}"><td>${serialToStr(m.t)}</td><td style="font-size:14px" title="${esc(m.sr)}">${esc(m.no)}</td><td class="n" style="color:#1E7B3C">${m.q > 0 ? '+' + fq(m.q) : ''}</td><td class="n" style="color:#C62828">${m.q < 0 ? '−' + fq(-m.q) : ''}</td><td class="n"${m.bal !== null && m.bal < 0 ? ' style="color:#C62828;font-weight:700"' : ''}>${m.after ? '<span class="muted">หลังดึง SimLex</span>' : fmt(m.bal)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">ไม่มีรับ-จ่ายทั้งเดือน (ยอดค้างจากเดือนก่อน)</td></tr>'}
-      <tr class="lclose"><td colspan="4"><b>ยอด SimLex ตอนดึง</b></td><td class="n"><b>${fmt(L.sim)}</b></td></tr>
-      <tr class="lclose"><td colspan="4"><b>นับได้จริง</b></td><td class="n"><b>${fmt(total)}</b></td></tr>
-      <tr class="lclose"><td colspan="4"><b>ส่วนต่าง (นับ − SimLex)</b></td><td class="n"><b style="color:${total - L.sim < 0 ? '#C62828' : '#1E7B3C'}">${sgnF(Math.round((total - L.sim) * 1000) / 1000)}</b></td></tr>
-      </tbody></table></div>
-      <div class="muted" style="font-size:13px;margin-top:4px">แถวเหลือง = เกิดระหว่างเวลานับกับเวลาดึง SimLex · แถวเทา = หลังดึง SimLex (ไม่รวมในยอด) · ยอดยกมาคิดย้อนจากยอด SimLex ควรเท่ากับยอดนับเดือนที่แล้วที่ปรับเข้า SimLex</div>`;
+  async function pullReis() {
+    try {
+      const r = await api('/api/reis?all=1');
+      if (r && r.meta) { S.reis = Object.assign({}, r.meta, { rows: r.rows }); try { localStorage.setItem(RKEY, JSON.stringify(S.reis)); } catch (_) {} }
+      else if (r && !r.meta && S.reis) await pushReis(true);
+    } catch (_) {}
   }
   // เบาะแสของ Item ที่ไม่ตรง: [{t: 'time'|'pair'|'sib'|'none', text, short}]
   function hintsOf(x, P) {
@@ -1635,7 +1680,7 @@ function startPc() {
     const R = S.reis;
     return `<div class="card" style="margin-bottom:18px"><div class="row" style="justify-content:space-between;align-items:flex-start">
         <div><h2 style="font-size:20px;margin:0 0 4px">เบาะแสตามหาของ (ไฟล์ RE&IS จาก SimLex)</h2>
-        <p class="muted" style="margin:0">อัปโหลดไฟล์ประวัติรับ-จ่าย (RE&IS) ของเดือนนั้น ระบบจะใส่เบาะแสให้ทุกรายการไม่ตรง · ใช้เฉพาะคลัง PD2 · เก็บไว้ในเครื่องนี้ ไม่ขึ้นเซิร์ฟเวอร์</p></div>
+        <p class="muted" style="margin:0">อัปโหลดไฟล์ประวัติรับ-จ่าย (RE&IS) ของเดือนนั้น ระบบจะใส่เบาะแสให้ทุกรายการไม่ตรง · ใช้เฉพาะคลัง PD2 · ส่งขึ้นระบบให้หัวหน้างานกด "ตามรอย" บนแท็บเล็ตได้ด้วย</p></div>
         <label class="btn sec sm" style="cursor:pointer">${R ? 'เปลี่ยนไฟล์' : 'เลือกไฟล์ RE&IS'}<input id="reisfile" type="file" accept=".xlsx" style="display:none"></label></div>
       ${R ? `<div class="row" style="gap:14px;margin-top:10px;align-items:center;font-size:15px"><span>📄 <b>${esc(R.name)}</b> · PD2 ${R.rows.length} รายการ · ${serialToStr(R.first)} – ${serialToStr(R.last)}</span>
         <label>เวลานับ <input id="reis-count" type="datetime-local" value="${serialToInput(R.count)}" style="width:auto;min-height:40px"></label>
@@ -1975,7 +2020,7 @@ function startPc() {
     else if (act === 'print-all-bad') printBad('');
     else if (act === 'export-total') exportTotal();
     else if (act === 'print-notcounted') printNotCounted();
-    else if (act === 'reis-clear') { S.reis = null; try { localStorage.removeItem(RKEY); } catch (_) {} render(); }
+    else if (act === 'reis-clear') { if (!(await H.confirm('ล้างไฟล์ RE&IS ออกจากระบบ? แท็บเล็ตจะตามรอยไม่ได้จนกว่าจะเลือกไฟล์ใหม่', 'ล้างไฟล์', true))) return; S.reis = null; try { localStorage.removeItem(RKEY); } catch (_) {} try { await api('/api/admin/reis', { method: 'POST', body: JSON.stringify({ clear: true }) }); } catch (e) { say(e.message, 'err'); } render(); }
     else if (act === 'print-line-bad') printBad(b.dataset.line);
     else if (act === 'export-mk') exportFile('mk');
     else if (act === 'export-adjust') exportFile('adjust');
@@ -1988,8 +2033,8 @@ function startPc() {
     }
   });
   document.addEventListener('change', (ev) => { if (ev.target.id === 'round') { S.roundId = ev.target.value; load(); } if (ev.target.id === 'preline') { S.preLine = ev.target.value; render(); } if (ev.target.id === 'repdate') { S.repDate = ev.target.value; render(); }
-    if (ev.target.id === 'reisfile' && ev.target.files[0]) { loadReis(ev.target.files[0]).then(render); }
-    if ((ev.target.id === 'reis-count' || ev.target.id === 'reis-sim') && S.reis && ev.target.value) { S.reis[ev.target.id === 'reis-count' ? 'count' : 'sim'] = inputToSerial(ev.target.value); try { localStorage.setItem(RKEY, JSON.stringify(S.reis)); } catch (_) {} render(); } });
+    if (ev.target.id === 'reisfile' && ev.target.files[0]) { loadReis(ev.target.files[0]).then(() => { render(); return S.reis && pushReis(true); }).then(render); }
+    if ((ev.target.id === 'reis-count' || ev.target.id === 'reis-sim') && S.reis && ev.target.value) { S.reis[ev.target.id === 'reis-count' ? 'count' : 'sim'] = inputToSerial(ev.target.value); try { localStorage.setItem(RKEY, JSON.stringify(S.reis)); } catch (_) {} render(); pushReis(false); } });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'q') { S.q = ev.target.value; S.status = $('#st').value; load(); } });
 
   load();
