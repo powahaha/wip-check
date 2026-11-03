@@ -286,6 +286,10 @@ table.t td.n,table.t th.n{text-align:right}
 .hint.h-sib{background:#EEF2FB;border-left:4px solid #17406F}
 .hint.h-none{background:#F2F2F2;border-left:4px solid #888}
 @media print{ .pbad td.phint{font-size:9px;color:#333} }
+.ledsum{margin:4px 0 8px}.ledsum>div{background:#F2F5F9;border-radius:8px;padding:8px 10px}.ledsum span{display:block;font-size:13px;color:#5B6B7F}.ledsum b{font-size:20px}
+.ledwrap{max-height:420px;overflow:auto;border:1px solid #E1E6ED;border-radius:8px}
+.t.led td,.t.led th{padding:6px 10px}.t.led thead th{position:sticky;top:0;background:#fff}
+.t.led tr.lopen td{background:#EEF2FB}.t.led tr.lclose td{background:#F2F5F9}.t.led tr.lwin td{background:#FFF4D6}.t.led tr.lafter td{color:#999;background:#FAFAFA}
 
 </style>
 </head>
@@ -1564,6 +1568,42 @@ function startPc() {
     return by;
   }
   const sgnF = (x) => (x > 0 ? '+' : '') + fmt(x);
+  // บัตรคุมสต็อก (Stock card) ของ Item จาก RE&IS: ยอดยกมา → รับเข้า/จ่ายออก ทีละรายการ → ยอด SimLex ตอนดึง
+  // ยอดยกมา = ยอด SimLex ตอนดึง − รับ-จ่ายทั้งหมดที่ลงวันที่ไม่เกินเวลาดึง (ไฟล์ STOCK สะท้อนตามวันที่รับ-จ่าย)
+  function ledger(k, simlex) {
+    const by = reisIndex(); if (!by) return null;
+    const mv = by[k] || [], sim = Number(simlex) || 0, cut = S.reis.sim;
+    const r3 = (v) => Math.round(v * 1000) / 1000;
+    const inSnap = mv.filter((m) => m[1] <= cut);
+    const open = r3(sim - inSnap.reduce((a, m) => a + m[3], 0));
+    let bal = open, minBal = open, negAt = null;
+    const rows = mv.map((m) => {
+      const after = m[1] > cut;
+      if (!after) { bal = r3(bal + m[3]); if (bal < minBal) minBal = bal; if (bal < 0 && negAt === null) negAt = m[1]; }
+      return { t: m[1], code: m[2], q: m[3], no: m[4], bal: after ? null : bal, after, win: m[1] >= S.reis.count && m[1] <= cut };
+    });
+    const rec = r3(inSnap.filter((m) => m[3] > 0).reduce((a, m) => a + m[3], 0));
+    const iss = r3(-inSnap.filter((m) => m[3] < 0).reduce((a, m) => a + m[3], 0));
+    return { open, rows, rec, iss, sim, minBal, negAt, first: S.reis.first };
+  }
+  function ledgerHtml(r, total) {
+    const L = ledger(String(r.code).toUpperCase(), r.simlex); if (!L) return '';
+    const fq = (v) => (v ? fmt(v) : '');
+    const flags = [];
+    if (L.open < 0) flags.push(`ยอดยกมาติดลบ (${fmt(L.open)}) แปลว่ายอดต้นเดือนใน SimLex ผิดตั้งแต่ต้น หรือมีรับเข้าที่ไม่ได้คีย์`);
+    else if (L.negAt !== null) flags.push(`ยอดคงเหลือติดลบตอน ${serialToStr(L.negAt)} = จ่ายออกก่อนรับเข้า (คีย์รับไม่ทัน/คีย์จ่ายเกิน)`);
+    return `<h3 style="margin:14px 0 6px">บัตรคุมสต็อกเดือนนี้ (RE&IS · PD2)</h3>
+      <div class="grid g4 ledsum"><div><span>ยอดยกมา</span><b>${fmt(L.open)}</b></div><div><span>รับเข้า</span><b style="color:#1E7B3C">+${fmt(L.rec)}</b></div><div><span>จ่ายออก</span><b style="color:#C62828">−${fmt(L.iss)}</b></div><div><span>ยอด SimLex ตอนดึง</span><b>${fmt(L.sim)}</b></div></div>
+      ${flags.map((f) => `<div class="hint h-pair" style="margin:6px 0">${esc(f)}</div>`).join('')}
+      <div class="ledwrap"><table class="t led"><thead><tr><th>วันที่ เวลา</th><th>เลขที่</th><th class="n">รับเข้า</th><th class="n">จ่ายออก</th><th class="n">คงเหลือ</th></tr></thead><tbody>
+      <tr class="lopen"><td colspan="2"><b>ยอดยกมา</b> <span class="muted">(ต้นรอบ ${serialToStr(L.first).slice(0, 5)})</span></td><td></td><td></td><td class="n"><b>${fmt(L.open)}</b></td></tr>
+      ${L.rows.map((m) => `<tr class="${m.after ? 'lafter' : (m.win ? 'lwin' : '')}"><td>${serialToStr(m.t)}</td><td style="font-size:13px">${esc(m.no)}</td><td class="n" style="color:#1E7B3C">${m.q > 0 ? '+' + fq(m.q) : ''}</td><td class="n" style="color:#C62828">${m.q < 0 ? '−' + fq(-m.q) : ''}</td><td class="n"${m.bal !== null && m.bal < 0 ? ' style="color:#C62828;font-weight:700"' : ''}>${m.after ? '<span class="muted">หลังดึง SimLex</span>' : fmt(m.bal)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">ไม่มีรับ-จ่ายทั้งเดือน (ยอดค้างจากเดือนก่อน)</td></tr>'}
+      <tr class="lclose"><td colspan="4"><b>ยอด SimLex ตอนดึง</b></td><td class="n"><b>${fmt(L.sim)}</b></td></tr>
+      <tr class="lclose"><td colspan="4"><b>นับได้จริง</b></td><td class="n"><b>${fmt(total)}</b></td></tr>
+      <tr class="lclose"><td colspan="4"><b>ส่วนต่าง (นับ − SimLex)</b></td><td class="n"><b style="color:${total - L.sim < 0 ? '#C62828' : '#1E7B3C'}">${sgnF(Math.round((total - L.sim) * 1000) / 1000)}</b></td></tr>
+      </tbody></table></div>
+      <div class="muted" style="font-size:13px;margin-top:4px">แถวเหลือง = เกิดระหว่างเวลานับกับเวลาดึง SimLex · แถวเทา = หลังดึง SimLex (ไม่รวมในยอด) · ยอดยกมาคิดย้อนจากยอด SimLex ควรเท่ากับยอดนับเดือนที่แล้วที่ปรับเข้า SimLex</div>`;
+  }
   // เบาะแสของ Item ที่ไม่ตรง: [{t: 'time'|'pair'|'sib'|'none', text, short}]
   function hintsOf(x, P) {
     const out = [];
@@ -1575,6 +1615,9 @@ function startPc() {
         const sum = Math.round(win.reduce((a, r) => a + r[3], 0) * 1000) / 1000;
         out.push({ t: 'time', short: `⏱ ${sgnF(sum)} ระหว่างนับ`, text: `มีรับ-จ่ายระหว่างเวลานับกับเวลาดึง SimLex: ${win.map((r) => `${r[2]} ${sgnF(r[3])} (${serialToStr(r[1]).slice(6)})`).join(', ')} · ถ้าของเคลื่อนก่อนนับ ส่วนต่างคือ ${sgnF(x.d)} · ถ้าเคลื่อนหลังนับ ส่วนต่างจริงคือ ${sgnF(Math.round((x.d + sum) * 1000) / 1000)}` });
       }
+      const L = ledger(x.k, x.simlex);
+      if (L && L.open < 0) out.push({ t: 'time', short: `ยอดยกมาติดลบ ${fmt(L.open)}`, text: `ยอดยกมาต้นเดือนติดลบ (${fmt(L.open)}) ยอด SimLex ผิดมาตั้งแต่ต้นเดือน หรือมีรับเข้าที่ไม่ได้คีย์` });
+      else if (L && L.negAt !== null) out.push({ t: 'time', short: `คงเหลือติดลบ ${serialToStr(L.negAt).slice(0, 5)}`, text: `ยอดคงเหลือใน SimLex ติดลบตอน ${serialToStr(L.negAt)} (ต่ำสุด ${fmt(L.minBal)}) จ่ายออกก่อนรับเข้า: คีย์รับไม่ทันหรือคีย์จ่ายเกิน` });
       if (!mv.length) out.push({ t: 'none', short: 'ไม่มีรับ-จ่ายทั้งเดือน', text: 'ไม่มีรับ-จ่ายของ PD2 ทั้งเดือน (ตามไฟล์ RE&IS) ยอด SimLex อาจค้างมาจากเดือนก่อน ควรนับซ้ำ' });
     }
     const base = (k) => k.replace(/-[^-]+$/, '');
@@ -1862,8 +1905,7 @@ function startPc() {
       <table class="t"><thead><tr><th>ไลน์</th><th class="n">นับได้</th><th>ส่งยอด</th></tr></thead><tbody>
       ${t.lines.map((l) => `<tr><td>${esc(l.name)}</td><td class="n">${l.qty === null ? 'ไม่ได้นับ' : fmt(l.qty)}</td><td>${l.submitted_at ? thTime(l.submitted_at) : '<b>ยังไม่ส่ง</b>'}</td></tr>`).join('')}</tbody></table>
       ${t.prev ? `<h3 style="margin:14px 0 6px">รอบก่อน (${esc(t.prev.label)})</h3><div>${t.prev.counts.length ? t.prev.counts.map((c) => esc(c.lineName) + ' ' + fmt(c.qty)).join(' · ') : 'ไม่มีข้อมูลนับของ Item นี้'}</div>` : ''}
-      ${(() => { const by = reisIndex(); if (!by) return ''; const mv = (by[String(r.code).toUpperCase()] || []).slice().reverse();
-        return `<h3 style="margin:14px 0 6px">รับ-จ่ายใน SimLex เดือนนี้ (RE&IS · PD2)</h3><table class="t"><thead><tr><th>เวลา</th><th>ประเภท</th><th class="n">จำนวน</th><th>เลขที่</th></tr></thead><tbody>${mv.slice(0, 40).map((m) => `<tr${m[1] >= S.reis.count && m[1] <= S.reis.sim ? ' style="background:#FFF4D6"' : ''}><td>${serialToStr(m[1])}</td><td>${esc(m[2])}</td><td class="n"><b style="color:${m[3] < 0 ? '#C62828' : '#1E7B3C'}">${sgnF(m[3])}</b></td><td style="font-size:13px">${esc(m[4])}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">ไม่มีรับ-จ่ายทั้งเดือน</td></tr>'}</tbody></table>${mv.length > 40 ? '<div class="muted">แสดง 40 รายการล่าสุด</div>' : ''}`; })()}
+      ${ledgerHtml(r, r.total)}
       <h3 style="margin:14px 0 6px">ประวัติการคีย์ Item นี้</h3>
       <table class="t"><thead><tr><th>เวลา</th><th>ไลน์</th><th>การกระทำ</th><th class="n">เดิม</th><th class="n">ใหม่</th><th>ผู้นับ</th></tr></thead><tbody>
       ${t.history.map((h) => `<tr><td>${thTime(h.at)}</td><td>${esc(h.lineName)}</td><td>${esc(ACTION[h.action] || h.action)}</td><td class="n">${fmt(h.old_qty)}</td><td class="n">${fmt(h.new_qty)}</td><td>${esc(h.counted_by || '')}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">ไม่มีประวัติ</td></tr>'}</tbody></table>
