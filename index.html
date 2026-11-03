@@ -1543,18 +1543,18 @@ function startPc() {
       const rows = wb.rowsOf(wb.names[0]);
       const h = rows[0].map((x) => String(x || '').trim());
       const c = (name) => h.indexOf(name);
-      const ci = { item: c('Item'), date: c('Receive / Issue Date'), qty: c('Receive / Issue Quantity'), loc: c('Location'), code: c('Receive / Issue Code'), no: c('Receive / Issue No.') };
+      const ci = { item: c('Item'), date: c('Receive / Issue Date'), qty: c('Receive / Issue Quantity'), loc: c('Location'), code: c('Receive / Issue Code'), no: c('Receive / Issue No.'), ord: c('Order No.') };
       if (ci.item < 0 || ci.date < 0 || ci.qty < 0) throw new Error('ไฟล์นี้ไม่ใช่ RE&IS (ไม่พบคอลัมน์ Item / Receive / Issue Date / Receive / Issue Quantity)');
       const out = [];
       rows.slice(1).forEach((r) => {
         if (!r || !r[ci.item]) return;
         if (ci.loc >= 0 && String(r[ci.loc] || '').trim() !== 'PD2') return;
         const t = toSerial(r[ci.date]); if (t === null) return;
-        out.push([String(r[ci.item]).trim(), t, String(r[ci.code] || ''), Number(r[ci.qty]) || 0, String(r[ci.no] || '')]);
+        out.push([String(r[ci.item]).trim(), t, String(r[ci.code] || ''), Number(r[ci.qty]) || 0, ci.ord >= 0 ? String(r[ci.ord] || '') : '', String(r[ci.no] || '')]);
       });
       if (!out.length) throw new Error('ไม่พบรายการของคลัง PD2 ในไฟล์');
       const last = Math.max(...out.map((r) => r[1])), day = Math.floor(last);
-      S.reis = { name: file.name, rows: out, count: day + 8 / 24, sim: day + 8.5 / 24, first: Math.min(...out.map((r) => r[1])), last };
+      S.reis = { v: 2, name: file.name, rows: out, count: day + 8 / 24, sim: day + 8.5 / 24, first: Math.min(...out.map((r) => r[1])), last };
       try { localStorage.setItem(RKEY, JSON.stringify(S.reis)); } catch (_) {}
       say('อ่านไฟล์ RE&IS แล้ว: รับ-จ่ายของ PD2 ' + out.length + ' รายการ');
     } catch (e) { say(e.message, 'err'); }
@@ -1580,7 +1580,7 @@ function startPc() {
     const rows = mv.map((m) => {
       const after = m[1] > cut;
       if (!after) { bal = r3(bal + m[3]); if (bal < minBal) minBal = bal; if (bal < 0 && negAt === null) negAt = m[1]; }
-      return { t: m[1], code: m[2], q: m[3], no: m[4], bal: after ? null : bal, after, win: m[1] >= S.reis.count && m[1] <= cut };
+      return { t: m[1], code: m[2], q: m[3], no: S.reis.v === 2 ? (m[4] || m[5]) : m[4], sr: S.reis.v === 2 ? m[5] : '', bal: after ? null : bal, after, win: m[1] >= S.reis.count && m[1] <= cut };
     });
     const rec = r3(inSnap.filter((m) => m[3] > 0).reduce((a, m) => a + m[3], 0));
     const iss = r3(-inSnap.filter((m) => m[3] < 0).reduce((a, m) => a + m[3], 0));
@@ -1594,10 +1594,11 @@ function startPc() {
     else if (L.negAt !== null) flags.push(`ยอดคงเหลือติดลบตอน ${serialToStr(L.negAt)} = จ่ายออกก่อนรับเข้า (คีย์รับไม่ทัน/คีย์จ่ายเกิน)`);
     return `<h3 style="margin:14px 0 6px">บัตรคุมสต็อกเดือนนี้ (RE&IS · PD2)</h3>
       <div class="grid g4 ledsum"><div><span>ยอดยกมา</span><b>${fmt(L.open)}</b></div><div><span>รับเข้า</span><b style="color:#1E7B3C">+${fmt(L.rec)}</b></div><div><span>จ่ายออก</span><b style="color:#C62828">−${fmt(L.iss)}</b></div><div><span>ยอด SimLex ตอนดึง</span><b>${fmt(L.sim)}</b></div></div>
+      ${S.reis.v === 2 ? '' : '<div class="hint h-time" style="margin:6px 0">ไฟล์ RE&IS ที่เก็บไว้เป็นแบบเก่า เลือกไฟล์ RE&IS ใหม่อีกครั้ง (แท็บตรวจก่อนส่ง) เพื่อให้แสดงเลข Order No.</div>'}
       ${flags.map((f) => `<div class="hint h-pair" style="margin:6px 0">${esc(f)}</div>`).join('')}
-      <div class="ledwrap"><table class="t led"><thead><tr><th>วันที่ เวลา</th><th>เลขที่</th><th class="n">รับเข้า</th><th class="n">จ่ายออก</th><th class="n">คงเหลือ</th></tr></thead><tbody>
+      <div class="ledwrap"><table class="t led"><thead><tr><th>วันที่ เวลา</th><th>Order No.</th><th class="n">รับเข้า</th><th class="n">จ่ายออก</th><th class="n">คงเหลือ</th></tr></thead><tbody>
       <tr class="lopen"><td colspan="2"><b>ยอดยกมา</b> <span class="muted">(ต้นรอบ ${serialToStr(L.first).slice(0, 5)})</span></td><td></td><td></td><td class="n"><b>${fmt(L.open)}</b></td></tr>
-      ${L.rows.map((m) => `<tr class="${m.after ? 'lafter' : (m.win ? 'lwin' : '')}"><td>${serialToStr(m.t)}</td><td style="font-size:13px">${esc(m.no)}</td><td class="n" style="color:#1E7B3C">${m.q > 0 ? '+' + fq(m.q) : ''}</td><td class="n" style="color:#C62828">${m.q < 0 ? '−' + fq(-m.q) : ''}</td><td class="n"${m.bal !== null && m.bal < 0 ? ' style="color:#C62828;font-weight:700"' : ''}>${m.after ? '<span class="muted">หลังดึง SimLex</span>' : fmt(m.bal)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">ไม่มีรับ-จ่ายทั้งเดือน (ยอดค้างจากเดือนก่อน)</td></tr>'}
+      ${L.rows.map((m) => `<tr class="${m.after ? 'lafter' : (m.win ? 'lwin' : '')}"><td>${serialToStr(m.t)}</td><td style="font-size:14px" title="${esc(m.sr)}">${esc(m.no)}</td><td class="n" style="color:#1E7B3C">${m.q > 0 ? '+' + fq(m.q) : ''}</td><td class="n" style="color:#C62828">${m.q < 0 ? '−' + fq(-m.q) : ''}</td><td class="n"${m.bal !== null && m.bal < 0 ? ' style="color:#C62828;font-weight:700"' : ''}>${m.after ? '<span class="muted">หลังดึง SimLex</span>' : fmt(m.bal)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">ไม่มีรับ-จ่ายทั้งเดือน (ยอดค้างจากเดือนก่อน)</td></tr>'}
       <tr class="lclose"><td colspan="4"><b>ยอด SimLex ตอนดึง</b></td><td class="n"><b>${fmt(L.sim)}</b></td></tr>
       <tr class="lclose"><td colspan="4"><b>นับได้จริง</b></td><td class="n"><b>${fmt(total)}</b></td></tr>
       <tr class="lclose"><td colspan="4"><b>ส่วนต่าง (นับ − SimLex)</b></td><td class="n"><b style="color:${total - L.sim < 0 ? '#C62828' : '#1E7B3C'}">${sgnF(Math.round((total - L.sim) * 1000) / 1000)}</b></td></tr>
